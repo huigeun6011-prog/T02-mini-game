@@ -274,20 +274,26 @@ function closestPointOnSegment(p, a, b) {
 // ---------- 큐 생성 (랜덤) ----------
 function buildQueue() {
   let pool = [];
-  const setCount = TOTAL_SHAPES / 3; // 7묶음
+  const setCount = Math.floor(TOTAL_SHAPES / 3); // 7묶음 (22 / 3 = 7.33 -> 내림)
   
   for (let i = 0; i < setCount; i++) {
     let set;
     if (i === 3) { // 4번째 묶음 (인덱스 3)
-      // 기존 도형들 + 마름모 중 무작위로 3개 선택
+      // ✨ 4가지 도형을 모두 포함하여 무작위로 섞음
       set = ['square', 'tri', 'pent', 'rhombus'];
-      set = set.sort(() => Math.random() - 0.5).slice(0, 3);
     } else {
       set = ['square', 'tri', 'pent'];
     }
     const shuffled = [...set].sort(() => Math.random() - 0.5);
     pool.push(...shuffled);
   }
+  
+  // 남은 도형이 있다면(22개를 채우기 위해) 랜덤하게 추가
+  while (pool.length < TOTAL_SHAPES) {
+    const extra = ['square', 'tri', 'pent', 'rhombus'][Math.floor(Math.random() * 4)];
+    pool.push(extra);
+  }
+  
   return pool.slice(0, TOTAL_SHAPES);
 }
 function getNextType() {
