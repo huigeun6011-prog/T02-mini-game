@@ -515,7 +515,6 @@ function computeSnap(mwx, mwy) {
           if (ownerOverlapArea > 0 || overlapRegions.length > 0) {
             lastRejectReason = 'overlap';
             
-            // ownerRegions가 이제 정상적으로 참조 가능함
             if (ownerRegions.length > 0) {
               overlapRegions = overlapRegions.concat(ownerRegions);
               if (!overlapWith) overlapWith = shape;
@@ -523,6 +522,13 @@ function computeSnap(mwx, mwy) {
 
             const dMouse = Math.hypot(cx - mwx, cy - mwy);
             if (!invalidBest || dMouse < invalidBest.dist) {
+              
+              // ✨ [로그 추가] 오류 후보가 갱신될 때마다 상세 정보 출력
+              // console.log(`[오류 후보 발견] 마우스: (${mwx.toFixed(1)}, ${mwy.toFixed(1)})`);
+              // console.log(`  - 새 도형: ${nextType}, 기존 도형: ${shape.type}`);
+              // console.log(`  - 겹친 넓이: ${ownerOverlapArea.toFixed(2)}, 비율: ${(overlapRatio*100).toFixed(2)}%`);
+              // console.log(`  - 좌표: (${cx.toFixed(1)}, ${cy.toFixed(1)}), 회전: ${rot.toFixed(2)}`);
+              
               invalidBest = { x: cx, y: cy, rot, type: nextType, dist: dMouse, overlapRegions, overlapWith };
             }
             continue;
@@ -1054,43 +1060,45 @@ canvas.addEventListener('click', (e) => {
   const nextT = getNextType();
   if (!nextT) return;
 
-  // 스냅된 위치가 있으면 거기에, 없으면 마우스 위치에 배치
-  let targetX = mouse.wx;
-  let targetY = mouse.wy;
-  let targetRot = 0;
-  
+  // 1. 정상 스냅 후보가 있을 때만 배치
   if (preview) {
-    targetX = preview.x; targetY = preview.y; targetRot = preview.rot;
+    shapes.push({ type: nextT, x: preview.x, y: preview.y, rot: preview.rot });
+    console.log(`[배치 성공] 도형: ${nextT}`);
+    
+    // 큐에서 제거
+    if (shapeQueue.length > 0) shapeQueue.shift();
+    else if (savedType) savedType = null;
+    
+    updateQueueUI();
+    errorMsg = '';
+    
+    if (shapes.length >= TOTAL_SHAPES) {
+      checkResult();
+      return;
+    }
+    
+    const res = computeSnap(mouse.wx, mouse.wy);
+    preview = res.best;
+    invalidPreview = res.invalid;
+    
   } else if (invalidPreview) {
-    // 겹치는 곳을 클릭했다면 에러 메시지 띄우고 배치 안 함
+    // 2. 겹침 발생 위치를 클릭했을 때
     errorMsg = '공간이 부족합니다!';
     tooltipX = mouse.sx;
     tooltipY = mouse.sy - 20;
     tooltipStartTime = performance.now();
     clearTimeout(errorMsgTimer);
     errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
-    return;
+    
+  } else {
+    // 3. 인접하지 않은 허공을 클릭했을 때 (에러 메시지)
+    errorMsg = '도형의 변에 인접하게 놓아주세요.';
+    tooltipX = mouse.sx;
+    tooltipY = mouse.sy - 20;
+    tooltipStartTime = performance.now();
+    clearTimeout(errorMsgTimer);
+    errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
   }
-
-  // 도형 배치
-  shapes.push({ type: nextT, x: targetX, y: targetY, rot: targetRot });
-  
-  // 큐에서 제거
-  if (shapeQueue.length > 0) shapeQueue.shift();
-  else if (savedType) savedType = null;
-  
-  updateQueueUI();
-  errorMsg = '';
-  
-  if (shapes.length >= TOTAL_SHAPES) {
-    checkResult();
-    return;
-  }
-  
-  // 다음 도형 미리보기 갱신
-  const res = computeSnap(mouse.wx, mouse.wy);
-  preview = res.best;
-  invalidPreview = res.invalid;
 });
 
 canvas.addEventListener('wheel', (e) => {
