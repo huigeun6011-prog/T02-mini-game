@@ -291,9 +291,13 @@ function buildQueue() {
   return pool.slice(0, TOTAL_SHAPES);
 }
 function getNextType() {
-  // ✨ 큐가 비어있고 슬롯에 도형이 있다면 슬롯의 도형이 '다음 도형'이 됨
-  if (shapeQueue.length === 0 && savedType) return savedType;
-  // 그 외에는 큐의 첫 번째 도형 반환 (큐가 비었으면 null)
+  // ✨ 큐가 비어있는데 슬롯에 도형이 있다면, 슬롯의 도형을 큐로 옮기고 슬롯을 비움
+  if (shapeQueue.length === 0 && savedType) {
+    shapeQueue.push(savedType);
+    savedType = null;
+    updateQueueUI();
+    // (참고: 이 함수가 호출될 때 UI도 갱신되도록 아래 render 로직에서 updateQueueUI를 호출해줘야 함)
+  }
   return shapeQueue.length > 0 ? shapeQueue[0] : null;
 }
 function consumeNextType() {
@@ -591,14 +595,9 @@ function drawShape(shape, opts = {}) {
 function updateQueueUI() {
   queueList.innerHTML = '';
   
-  // ✨ 큐와 슬롯을 합친 "보여줄 목록" 생성
-  const displayQueue = [...shapeQueue];
-  if (savedType) displayQueue.push(savedType); // 슬롯 도형을 대기열 맨 뒤에 붙임
-
-  // 최대 3개까지만 표시
-  for (let i = 0; i < Math.min(3, displayQueue.length); i++) {
-    const t = displayQueue[i]; // ✨ shapeQueue 대신 displayQueue 사용
-    
+  // 오직 대기열(shapeQueue)만 표시
+  for (let i = 0; i < Math.min(3, shapeQueue.length); i++) {
+    const t = shapeQueue[i]; 
     const el = document.createElement('div');
     el.className = 'q-item';
     
