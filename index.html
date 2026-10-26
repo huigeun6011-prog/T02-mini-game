@@ -541,15 +541,27 @@ function computeSnap(mwx, mwy) {
 
 // ---------- 볼록 껍질 / 채움 비율 ----------
 function computeHullPoints() {
-  if (shapes.length < 3) return null;
+  // 도형이 없으면 껍질도 없음
+  if (shapes.length === 0) return null; 
+  
   const points = [];
-  for (const s of shapes) for (const v of worldVerts(s)) {
-    let dup = false;
-    for (const p of points)
-      if (Math.abs(p[0] - v.x) < 1e-6 && Math.abs(p[1] - v.y) < 1e-6) { dup = true; break; }
-    if (!dup) points.push([v.x, v.y]);
+  for (const s of shapes) {
+    for (const v of worldVerts(s)) {
+      // 중복 점 제거
+      let dup = false;
+      for (const p of points) {
+        if (Math.abs(p[0] - v.x) < 1e-6 && Math.abs(p[1] - v.y) < 1e-6) { 
+          dup = true; 
+          break; 
+        }
+      }
+      if (!dup) points.push([v.x, v.y]);
+    }
   }
+  
+  // 수집된 점이 3개 미만이면 볼록 껍질(다각형)을 만들 수 없음
   if (points.length < 3) return null;
+  
   return polygonHull(points);
 }
 function shapesTotalArea() {
@@ -594,10 +606,9 @@ function drawShape(shape, opts = {}) {
 }
 function updateQueueUI() {
   queueList.innerHTML = '';
-  
-  // 오직 대기열(shapeQueue)만 표시
-  for (let i = 0; i < Math.min(3, shapeQueue.length); i++) {
-    const t = shapeQueue[i]; 
+  // ✨ index 1부터 시작하여 첫 번째 항목(손에 든 것)은 제외
+  for (let i = 1; i < Math.min(4, shapeQueue.length); i++) { 
+    const t = shapeQueue[i];
     const el = document.createElement('div');
     el.className = 'q-item';
     
@@ -672,12 +683,37 @@ function render() {
   }
   
   // 2. 정상 미리보기 그리기
-  if (preview && gameState === 'playing') {
-    const color = preview.type === 'square' ? 'rgba(80,140,220,0.35)'
-                : preview.type === 'tri' ? 'rgba(220,140,80,0.35)'
-                : preview.type === 'pent' ? 'rgba(138,74,216,0.35)'
-                : 'rgba(80, 200, 180, 0.35)';
-    drawShape(preview, { fill: color, stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 });
+    // 2. 미리보기 (스냅되었거나, 손에 들고 있거나)
+  if (gameState === 'playing') {
+    const nextT = getNextType();
+    if (nextT) {
+      let drawX, drawY, drawRot;
+      let isSnapped = false;
+      
+      if (preview) {
+        drawX = preview.x; drawY = preview.y; drawRot = preview.rot;
+        isSnapped = true;
+      } else if (invalidPreview) {
+        drawX = invalidPreview.x; drawY = invalidPreview.y; drawRot = invalidPreview.rot;
+        isSnapped = true;
+      } else {
+        // ✨ 스냅할 곳이 없으면 마우스 위치에 그대로 그리기
+        drawX = mouse.wx; drawY = mouse.wy; drawRot = 0;
+        isSnapped = false;
+      }
+
+      const handShape = { type: nextT, x: drawX, y: drawY, rot: drawRot };
+      
+      const color = nextT === 'square' ? 'rgba(80,140,220,0.35)'
+                  : nextT === 'tri' ? 'rgba(220,140,80,0.35)'
+                  : nextT === 'pent' ? 'rgba(138,74,216,0.35)'
+                  : 'rgba(80, 200, 180, 0.35)';
+                  
+      // 스냅되지 않았을 때(마우스에 들고 있을 때)는 투명도 낮추기
+      ctx.globalAlpha = isSnapped ? 1.0 : 0.4; 
+      drawShape(handShape, { fill: color, stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 });
+      ctx.globalAlpha = 1.0;
+    }
   }
   
   // 3. ✨ 겹침 미리보기 및 겹친 부분 강조
@@ -769,12 +805,9 @@ function render() {
   }
 
   // 6. HUD 업데이트 (기존 로직 유지)
-  const pct = computeFillPercent();
-  const nextT = getNextType();
-  const nextName = nextT === 'square' ? '정사각형' : nextT === 'tri' ? '정삼각형' : nextT === 'pent' ? '정오각형' : nextT === 'rhombus' ? '마름모' : '없음';
+  const pct = computeFillPercent();  
   hud.textContent =
-    `배치: ${shapes.length} / ${TOTAL_SHAPES}\n` +
-    `다음: ${nextName}\n` +
+    `${shapes.length} / ${TOTAL_SHAPES}\n` +
     `채움: ${pct.toFixed(1)}% (목표 ${TARGET_PCT}%)\n` +
     `줌: ${view.scale.toFixed(2)}x`;
 }
@@ -1012,48 +1045,46 @@ window.addEventListener('mouseup', (e) => {
 canvas.addEventListener('click', (e) => {
   if (gameState !== 'playing' || e.button !== 0) return;
   
+  const nextT = getNextType();
+  if (!nextT) return;
+
+  // 스냅된 위치가 있으면 거기에, 없으면 마우스 위치에 배치
+  let targetX = mouse.wx;
+  let targetY = mouse.wy;
+  let targetRot = 0;
+  
   if (preview) {
-    // 도형 배치
-    shapes.push({ type: preview.type, x: preview.x, y: preview.y, rot: preview.rot });
-    
-    // 큐에 남은 게 있으면 큐에서 제거, 없으면 슬롯에서 제거
-    if (shapeQueue.length > 0) {
-      shapeQueue.shift();
-    } else if (savedType) {
-      savedType = null;
-    }
-    
-    updateQueueUI();
-    errorMsg = ''; // 배치 성공 시 에러 메시지 초기화
-    
-    // 모든 도형을 배치했는지 확인
-    if (shapes.length >= TOTAL_SHAPES) {
-      checkResult();
-      return;
-    }
-    
-    // 다음 도형에 맞춰 미리보기 재계산
-    const res = computeSnap(mouse.wx, mouse.wy);
-    preview = res.best;
-    invalidPreview = res.invalid;
-  } else {
-    // 미리보기가 없을 때(놓을 수 없는 위치) 클릭 시 에러 메시지 설정
-    if (invalidPreview) {
-      errorMsg = '공간이 부족합니다!';
-    } else if (lastRejectReason === 'same_type') {
-      errorMsg = '같은 모양끼리는 붙일 수 없어요.';
-    } else {
-      errorMsg = '도형의 변에 인접하게 놓아주세요.';
-    }
-    
-    // 마우스가 클릭한 화면 좌표 저장 및 툴팁 타이머 시작
+    targetX = preview.x; targetY = preview.y; targetRot = preview.rot;
+  } else if (invalidPreview) {
+    // 겹치는 곳을 클릭했다면 에러 메시지 띄우고 배치 안 함
+    errorMsg = '공간이 부족합니다!';
     tooltipX = mouse.sx;
     tooltipY = mouse.sy - 20;
     tooltipStartTime = performance.now();
-    
     clearTimeout(errorMsgTimer);
     errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+    return;
   }
+
+  // 도형 배치
+  shapes.push({ type: nextT, x: targetX, y: targetY, rot: targetRot });
+  
+  // 큐에서 제거
+  if (shapeQueue.length > 0) shapeQueue.shift();
+  else if (savedType) savedType = null;
+  
+  updateQueueUI();
+  errorMsg = '';
+  
+  if (shapes.length >= TOTAL_SHAPES) {
+    checkResult();
+    return;
+  }
+  
+  // 다음 도형 미리보기 갱신
+  const res = computeSnap(mouse.wx, mouse.wy);
+  preview = res.best;
+  invalidPreview = res.invalid;
 });
 
 canvas.addEventListener('wheel', (e) => {
