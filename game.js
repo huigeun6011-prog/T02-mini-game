@@ -664,10 +664,14 @@ function render() {
 
   const rawPct = computeFillPercent();
   const displayPct = Math.floor(rawPct * 100) / 100; 
+  
+  // 80% 이상인지 미만인지에 따라 부등호 결정
+  const compareSymbol = displayPct >= TARGET_PCT ? '≥' : '<';
+  
   hud.textContent =
     `${shapes.length} / ${TOTAL_SHAPES}\n` +
-    `채움: ${displayPct.toFixed(2)}% (목표 ${TARGET_PCT}%)\n` +
-    `줌: ${view.scale.toFixed(2)}x`;
+    `${displayPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%\n` +
+    `줌: ${view.scale.toFixed(2)}x`; // 줌 텍스트는 유지 (원하시면 삭제 가능)
 }
 
 function loop() { render(); requestAnimationFrame(loop); }
@@ -730,11 +734,17 @@ function checkResult() {
   const rawPct = computeFillPercent();
   const truncatedPct = Math.floor(rawPct * 100) / 100; 
   const success = truncatedPct >= TARGET_PCT;
+  
+  // 80% 이상인지 미만인지에 따라 부등호 결정
+  const compareSymbol = success ? '≥' : '<';
+  
   gameState = 'result';
   
   resultTitle.textContent = success ? '성공!' : '실패';
   resultTitle.className = 'result-title ' + (success ? 'success' : 'fail');
-  resultDesc.textContent = `채움 비율: ${truncatedPct.toFixed(2)}% (목표 ${TARGET_PCT}%)`;
+  
+  // 텍스트 설명 제거, 숫자와 부등호만 표시
+  resultDesc.textContent = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
   
   hideAllOverlays();
   resultBar.classList.add('show');
@@ -969,7 +979,7 @@ canvas.addEventListener('wheel', (e) => {
   const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
   const before = screenToWorld(sx, sy);
   const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  const newScale = Math.max(0.2, Math.min(5, view.scale * factor));
+  const newScale = Math.max(0.2, Math.min(10, view.scale * factor));
   if (newScale === view.scale) return;
   view.scale = newScale;
   view.x = sx - before.x * newScale;
