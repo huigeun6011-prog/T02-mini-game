@@ -249,11 +249,11 @@ function computeSnap(mwx, mwy) {
       const a = verts[i], b = verts[(i + 1) % verts.length];
       const cp = closestPointOnSegment({ x: mwx, y: mwy }, a, b);
       
-      // [1단계] 마우스와 가까운 변 찾기 (SNAP_DIST 이내)
+      // [1단계] 거리 조건
       if (dist({ x: mwx, y: mwy }, cp) > SNAP_DIST) continue;
       checkedEdges++;
 
-      // 내부 변(이미 다른 도형과 맞닿은 변) 제외
+      // 내부 변 제외
       let isInnerEdge = false;
       for (const other of shapes) {
         if (other === shape) continue;
@@ -267,7 +267,7 @@ function computeSnap(mwx, mwy) {
       }
       if (isInnerEdge) { lastRejectReason = 'inner_edge'; continue; }
 
-      // [2단계] 양쪽 방향 후보 생성 및 소유자 겹침 대소 비교
+      // [2단계] 양쪽 방향 후보 생성
       let candidates = [];
       for (let j = 0; j < base.length; j++) {
         const c0 = base[j], d0 = base[(j + 1) % base.length];
@@ -275,18 +275,26 @@ function computeSnap(mwx, mwy) {
           const targetA = flip ? b : a, targetB = flip ? a : b;
           const cvec = { x: d0.x - c0.x, y: d0.y - c0.y };
           const tvec = { x: targetB.x - targetA.x, y: targetB.y - targetA.y };
-          const rot = Math.atan2(tvec.y, tvec.x) - Math.atan2(cvec.y, cvec.x);
+          
+          // ✨ [변경] 회전각을 계산한 후 1도 단위로 반올림
+          let rot = Math.atan2(tvec.y, tvec.x) - Math.atan2(cvec.y, cvec.x);
+          const rotDegrees = Math.round(rot * (180 / Math.PI));
+          rot = rotDegrees * (Math.PI / 180);
+
           const rc0 = rotPoint(c0, rot);
           const cx = targetA.x - rc0.x, cy = targetA.y - rc0.y;
-          const candVerts = worldVerts({ type: nextType, x: cx, y: cy, rot });
+          
+          // 임시 후보 도형 생성
+          let candVerts = worldVerts({ type: nextType, x: cx, y: cy, rot });
 
-          // 같은 타입끼리 변을 공유하는 후보는 제외
+          // ✨ [핵심 변경] 기존 도형의 꼭짓점 좌표를 새 도형에 강제 대입 (오차 제거)
+          candVerts[j] = { x: targetA.x, y: targetA.y };
+          candVerts[(j + 1) % base.length] = { x: targetB.x, y: targetB.y };
+
           if (sharesEdgeWithSameType(candVerts, nextType)) continue;
           
           // 소유자와의 겹침 면적 계산
           const ownerOverlapArea = getOverlapArea(candVerts, verts);
-          
-          // 소유자와 겹치는 면적이 0.1을 초과하면 내부로 파고드는 후보이므로 탈락
           if (ownerOverlapArea > 0.1) continue;
 
           const dMouse = Math.hypot(cx - mwx, cy - mwy);
@@ -296,18 +304,16 @@ function computeSnap(mwx, mwy) {
 
       if (candidates.length === 0) continue;
       
-      // 마우스와 가장 가까운 쪽(유저의 의도) 선택
       candidates.sort((x, y) => x.dMouse - y.dMouse);
       const chosen = candidates[0];
 
-      // [3단계] 최종 겹침 검사 (모든 기존 도형 대상, 예외 없음)
+      // [3단계] 최종 겹침 검사
       let hasOverlap = false;
       let overlapWith = null;
 
       for (const other of shapes) {
         const otherVerts = worldVerts(other);
         const area = getOverlapArea(chosen.candVerts, otherVerts);
-                
         if (area > 0.1) { 
           hasOverlap = true;
           overlapWith = other;
@@ -318,12 +324,10 @@ function computeSnap(mwx, mwy) {
       const dMouseFinal = Math.hypot(chosen.x - mwx, chosen.y - mwy);
 
       if (hasOverlap) {
-        // 겹침 발생 (오류 후보)
         if (!invalidBest || dMouseFinal < invalidBest.dist) {
           invalidBest = { x: chosen.x, y: chosen.y, rot: chosen.rot, type: nextType, dist: dMouseFinal, overlapWith };
         }
       } else {
-        // 정상 배치
         if (!best || dMouseFinal < best.dist) {
           best = { x: chosen.x, y: chosen.y, rot: chosen.rot, type: nextType, dist: dMouseFinal };
         }
