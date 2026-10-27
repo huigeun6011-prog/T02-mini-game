@@ -72,6 +72,22 @@ let currentBundleIndex = 0; // 현재 진행 중인 묶음 인덱스
 let currentShapeIndex = 0;  // 현재 묶음 내에서 꺼낼 도형 인덱스
 let replacedBundleIndex = -1; // 교체가 일어난 묶음 번호 (재교체 방지용)
 let replacedShapeIndex = -1;  // 교체가 일어난 묶음 내 위치 (재교체 방지용)
+let startTime = 0;           // 게임 시작 시간 (performance.now() 기준)
+const TIME_LIMIT = 100;      // 제한 시간 (100초)
+let isTimeOver = false;      // 시간 초과 여부
+let pausedTime = 0;          // 일시정지된 시간 누적
+let timerExplosionStart = 0; // ✨ 타이머 터짐 애니메이션 시작 시간
+let timerParticles = []; // ✨ 파편(파티클) 배열 추가
+let isFontLoaded = false;
+let finalRemainingTime = 0; // ✨ 전역 변수 추가 (상태 변수 근처)
+
+// ✨ DSEG 폰트 로딩 대기 (게임 시작 전에 실행)
+document.fonts.load('bold 80px "DSEG7 Classic"').then(() => {
+  isFontLoaded = true;
+}).catch(() => {
+  console.warn('DSEG 폰트 로딩 실패, 기본 폰트 사용');
+  isFontLoaded = true; // 실패해도 게임은 진행되도록
+});
 
 // ---------- 유틸 ----------
 function rotPoint(p, ang) {
@@ -577,6 +593,98 @@ function updateQueueUI() {
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // ✨ 0. 타이머 및 파편 렌더링
+  if (gameState === 'playing' || gameState === 'result') {
+    let remainingTime = TIME_LIMIT;
+    
+    if (gameState === 'playing') {
+      remainingTime = Math.max(0, TIME_LIMIT - (performance.now() - startTime) / 1000);
+      if (remainingTime <= 0 && !isTimeOver) {
+        isTimeOver = true;
+        timerExplosionStart = performance.now();
+        // ✨ 폭발 시점에 파편 생성
+        createTimerParticles(); 
+      }
+    } else if (gameState === 'result') {
+      remainingTime = finalRemainingTime; 
+    }
+
+    const centerX = window.innerWidth / 2;
+    const timerY = window.innerHeight / 2 - 200;
+
+    // ✨ 폭발 후 파편 그리기
+    if (isTimeOver && timerParticles.length > 0) {
+      const elapsed = performance.now() - timerExplosionStart;
+      
+      // 파편 업데이트 및 그리기
+      for (let i = timerParticles.length - 1; i >= 0; i--) {
+        const p = timerParticles[i];
+        
+        // 물리 연산 (속도, 중력, 투명도)
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05; // 아주 약한 중력
+        p.alpha -= 0.015; // 서서히 투명해짐
+        
+        // 수명이 다하면 제거
+        if (p.alpha <= 0) {
+          timerParticles.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = '#ff5050'; // 붉은색 파편
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+        ctx.restore();
+      }
+    } 
+    // ✨ 폭발 전 타이머 그리기
+    else if (!isTimeOver) {
+      ctx.save();
+      // ✨ 폰트가 로드되었으면 DSEG, 아니면 기본 sans-serif
+      const fontFamily = isFontLoaded ? '"DSEG7 Classic", monospace' : 'sans-serif';
+      ctx.font = `bold 80px ${fontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // 시간 문자열 포맷
+      let timeStr;
+      if (remainingTime > 30) {
+        timeStr = Math.ceil(remainingTime).toString();
+      } else if (remainingTime > 10) {
+        timeStr = remainingTime.toFixed(1);
+      } else {
+        timeStr = remainingTime.toFixed(2);
+      }
+
+      // 10초 이하 파동(심장박동) 효과
+      if (remainingTime <= 10 && remainingTime > 0) {
+        const now = performance.now();
+        const cycle = (now % 1000) / 1000; // 1초 주기
+        
+        // 글자는 가만히 있고, 뒤에서 붉은 파동이 퍼져나감
+        const pulseRadius = 40 + (cycle * 60); // 40 -> 100으로 커짐
+        const pulseAlpha = 1 - cycle; // 1 -> 0으로 투명해짐
+        
+        ctx.beginPath();
+        ctx.arc(centerX, timerY, pulseRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 80, 80, ${pulseAlpha * 0.5})`;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // 글자 자체는 고정 (붉은색)
+        ctx.fillStyle = 'rgba(255, 80, 80, 0.2)';
+        ctx.fillText(timeStr, centerX, timerY);
+      } else {
+        // 평소 상태
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillText(timeStr, centerX, timerY);
+      }
+      ctx.restore();
+    }
+  }
   
   for (const s of shapes) {
     const color = s.type === 'square' ? 'rgba(80,140,220,0.85)'
@@ -674,6 +782,36 @@ function render() {
     `줌: ${view.scale.toFixed(2)}x`; // 줌 텍스트는 유지 (원하시면 삭제 가능)
 }
 
+// ✨ 타이머가 터질 때 파편을 생성하는 함수 (render 함수 바깥에 추가)
+function createTimerParticles() {
+  timerParticles = [];
+  const centerX = window.innerWidth / 2;
+  const timerY = window.innerHeight / 2 - 200;
+  
+  // 글자 영역(약 200x80)을 바탕으로 무작위 파편 생성
+  const width = 200;
+  const height = 80;
+  
+  for (let i = 0; i < 80; i++) {
+    // 글자 영역 안에서 무작위 위치
+    const px = centerX - width / 2 + Math.random() * width;
+    const py = timerY - height / 2 + Math.random() * height;
+    
+    // 무작위 속도 (사방으로 조금씩 퍼짐)
+    const vx = (Math.random() - 0.5) * 4;
+    const vy = (Math.random() - 0.5) * 4;
+    
+    timerParticles.push({
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
+      size: Math.random() * 3 + 2, // 2~5px 크기
+      alpha: 1
+    });
+  }
+}
+
 function loop() { render(); requestAnimationFrame(loop); }
 
 // ---------- 화면 전환 및 게임 ----------
@@ -688,6 +826,12 @@ function resetGame() {
   savedType = null;
   view = { x: 0, y: 0, scale: 1 };
   resultBar.classList.remove('show');
+
+  // ✨ 타이머 초기화
+  startTime = performance.now();
+  isTimeOver = false;
+  pausedTime = 0;
+  timerParticles = []; // ✨ 파편 초기화
   
   currentBundleIndex = 0;
   currentShapeIndex = 0;
@@ -734,18 +878,27 @@ function checkResult() {
   const rawPct = computeFillPercent();
   const truncatedPct = Math.floor(rawPct * 100) / 100; 
   const success = truncatedPct >= TARGET_PCT;
+
+  // ✨ 게임 종료 시점의 남은 시간 저장
+  finalRemainingTime = Math.max(0, TIME_LIMIT - (performance.now() - startTime) / 1000);
   
-  // 80% 이상인지 미만인지에 따라 부등호 결정
-  const compareSymbol = success ? '≥' : '<';
-  
+  // 만약 시간 초과(0초) 상태라면 0으로 저장
+  if (isTimeOver) finalRemainingTime = 0;
+
   gameState = 'result';
   
   resultTitle.textContent = success ? '성공!' : '실패';
   resultTitle.className = 'result-title ' + (success ? 'success' : 'fail');
   
-  // 텍스트 설명 제거, 숫자와 부등호만 표시
-  resultDesc.textContent = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
+  const compareSymbol = success ? '≥' : '<';
+  let descText = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
   
+  // ✨ 시간 초과(또는 저장/불러오기) 시 랭킹 등록 불가 메시지 추가
+  if (isTimeOver) {
+    descText += ' (시간 초과 또는 저장/불러오기로 인해 랭킹 등록 불가)';
+  }
+  
+  resultDesc.textContent = descText;
   hideAllOverlays();
   resultBar.classList.add('show');
 }
@@ -753,39 +906,69 @@ function checkResult() {
 // ---------- 저장/불러오기 ----------
 function serializeState() {
   return {
-    version: 3, // ✨ 버전 업
+    version: 4,
     shapes: shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot })),
-    queue: JSON.parse(JSON.stringify(shapeQueue)), // 2차원 배열 복사
+    queue: shapeQueue.map(bundle => ({
+      shapes: [...bundle],
+      isSpecial: bundle.isSpecial === true
+    })),
     currentBundleIndex,
     currentShapeIndex,
     replacedBundleIndex,
     replacedShapeIndex,
+    savedType: savedType,
+    isTimeOver: isTimeOver, // ✨ 저장
     view: { x: view.x, y: view.y, scale: view.scale },
     savedAt: new Date().toISOString(),
   };
 }
 // loadFromSlot에서 version === 3 조건 확인 및 변수 복원
 function saveToSlot(i) {
-  try { localStorage.setItem(SAVE_PREFIX + i, JSON.stringify(serializeState())); return true; } 
-  catch (e) { return false; }
+  if (!confirm('저장하시겠습니까?\n(주의: 저장/불러오기를 하면 랭킹 등록이 불가능해집니다.)')) {
+    return false;
+  }
+  try {
+    // ✨ 저장 시 시간 초과 처리 강제
+    isTimeOver = true; 
+    localStorage.setItem(SAVE_PREFIX + i, JSON.stringify(serializeState()));
+    return true;
+  } catch (e) { return false; }
 }
 function loadFromSlot(i) {
   try {
     const raw = localStorage.getItem(SAVE_PREFIX + i);
     if (!raw) return false;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 3 || !Array.isArray(data.shapes)) return false;
+    if (!data || data.version !== 4 || !Array.isArray(data.shapes)) return false;
+    
     shapes = data.shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot }));
-    shapeQueue = Array.isArray(data.queue) ? [...data.queue] : [];
+    shapeQueue = data.queue.map(item => {
+      const bundle = [...item.shapes];
+      if (item.isSpecial) bundle.isSpecial = true;
+      return bundle;
+    });
+
+    currentBundleIndex = data.currentBundleIndex || 0;
+    currentShapeIndex = data.currentShapeIndex || 0;
+    replacedBundleIndex = data.replacedBundleIndex !== undefined ? data.replacedBundleIndex : -1;
+    replacedShapeIndex = data.replacedShapeIndex !== undefined ? data.replacedShapeIndex : -1;
+    
     view = data.view && typeof data.view.x === 'number' ? { x: data.view.x, y: data.view.y, scale: data.view.scale } : { x: 0, y: 0, scale: 1 };
     preview = null;
     savedType = data.savedType || null;
+    
+    // ✨ 불러오기 시 시간 초과 상태 강제
+    isTimeOver = true; 
+    
     gameState = 'playing';
     resultBar.classList.remove('show');
     updateQueueUI();
     hideAllOverlays();
     return true;
-  } catch (e) { return false; }
+  } catch (e) { 
+    console.error(e);
+    return false; 
+  }
 }
 function slotInfo(i) {
   try {
@@ -822,12 +1005,34 @@ function renderSlots(container, mode) {
     btnGroup.style.display = 'flex';
     btnGroup.style.gap = '6px';
 
-    const btn = document.createElement('button');
+        const btn = document.createElement('button');
     if (mode === 'save') {
+      // 1. 저장 버튼
       btn.textContent = '저장';
-      btn.onclick = () => { if (saveToSlot(i)) renderSlots(container, 'save'); else alert('저장 실패'); };
+      btn.onclick = () => {
+        if (info) { 
+          if (!confirm(`슬롯 ${i + 1}에 이미 데이터가 있습니다. 덮어쓰시겠습니까?`)) return;
+        }
+        if (saveToSlot(i)) renderSlots(container, 'save'); 
+        else alert('저장 실패'); 
+      };
       btnGroup.appendChild(btn);
+
+      // ✨ 2. 저장 화면에서도 삭제 버튼 추가
+      const btnDel = document.createElement('button');
+      btnDel.textContent = '삭제';
+      btnDel.className = 'danger';
+      btnDel.disabled = !info;
+      btnDel.onclick = () => {
+        if (confirm(`슬롯 ${i + 1}의 데이터를 정말 삭제하시겠습니까?`)) {
+          if (deleteSlot(i)) renderSlots(container, 'save'); // ✨ 저장 화면 갱신
+          else alert('삭제 실패');
+        }
+      };
+      btnGroup.appendChild(btnDel);
+
     } else {
+      // 불러오기 모드
       btn.textContent = '불러오기';
       btn.disabled = !info;
       btn.onclick = () => { if (!loadFromSlot(i)) alert('불러오기 실패'); };
@@ -995,16 +1200,17 @@ canvas.addEventListener('contextmenu', (e) => {
   // 1. 큐가 비었거나 현재 묶음이 없으면 중단
   if (shapeQueue.length === 0 || currentBundleIndex >= shapeQueue.length) return;
   
+  // ✨ [수정] currentBundle 변수를 가장 먼저 선언하여 참조 에러 방지
   const currentBundle = shapeQueue[currentBundleIndex];
   if (currentShapeIndex >= currentBundle.length) return; // 현재 묶음 다 씀
 
   const currentNext = currentBundle[currentShapeIndex];
 
-  // ✨ [추가] 맨 마지막 상황 체크 (현재 큐에 남은 도형이 1개뿐이고 다음 큐가 없을 때)
-  const isLastBundle = (currentBundleIndex === shapeQueue.length - 1);
-  const isLastShape = (currentBundle.length === 1);
+  // ✨ 2. 마지막 도형 체크 (현재 큐에 남은 도형이 1개이고, 다음 큐가 없을 때)
+  const isLastShapeInQueue = (currentBundle.length === 1);
+  const isNoNextBundle = (shapeQueue.length === currentBundleIndex + 1);
   
-  if (isLastBundle && isLastShape) {
+  if (isLastShapeInQueue && isNoNextBundle && !savedType) {
     errorMsg = '마지막 도형은 슬롯에 넣을 수 없습니다!';
     tooltipX = mouse.sx;
     tooltipY = mouse.sy - 20;
@@ -1014,7 +1220,7 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 2. 슬롯에 있는 도형과 현재 도형이 같으면 경고 (교체 무의미)
+  // 3. 슬롯에 있는 도형과 현재 도형이 같으면 경고 (교체 무의미)
   if (savedType === currentNext) {
     errorMsg = '이미 같은 도형을 들고 있습니다.';
     tooltipX = mouse.sx;
@@ -1025,8 +1231,8 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 3. 삼삼삼 번들인 경우 교체 불가
-  if (currentBundle.isSpecial === true) { // ✨ 길이 대신 isSpecial 사용
+  // 4. 삼삼삼 번들인 경우 교체 불가
+  if (currentBundle.isSpecial === true) {
     errorMsg = '삼각형 3개 번들은 교체할 수 없습니다!';
     tooltipX = mouse.sx;
     tooltipY = mouse.sy - 20;
@@ -1036,7 +1242,7 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 4. 이미 이 조각을 교체했다면 재교체 불가
+  // 5. 이미 이 조각을 교체했다면 재교체 불가
   if (currentBundleIndex === replacedBundleIndex && currentShapeIndex === replacedShapeIndex) {
     errorMsg = '이미 교체한 조각입니다. 배치 후 다시 시도하세요.';
     tooltipX = mouse.sx;
@@ -1047,7 +1253,7 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 5. 교체 로직 수행
+  // 6. 교체 로직 수행
   if (!savedType) {
     // 슬롯이 비어있으면 현재 도형을 슬롯으로 이동
     savedType = currentNext;
@@ -1065,11 +1271,11 @@ canvas.addEventListener('contextmenu', (e) => {
     currentBundle[currentShapeIndex] = temp;
   }
 
-  // 6. 교체 락 기록 (재교체 방지)
+  // 7. 교체 락 기록 (재교체 방지)
   replacedBundleIndex = currentBundleIndex;
   replacedShapeIndex = currentShapeIndex;
 
-  // 7. UI 및 미리보기 갱신
+  // 8. UI 및 미리보기 갱신
   updateQueueUI();
   preview = null;
   invalidPreview = null;
@@ -1084,6 +1290,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (gameState === 'playing') {
       gameState = 'paused';
+      // ✨ 일시정지 시점 기록
+      pausedTime = performance.now(); 
       showOverlay(pauseMenu);
     } else if (gameState === 'paused') {
       if (!saveMenu.classList.contains('hidden') || !loadMenu.classList.contains('hidden') || !rulesAgain.classList.contains('hidden')) {
@@ -1091,6 +1299,8 @@ window.addEventListener('keydown', (e) => {
         showOverlay(pauseMenu);
       } else {
         gameState = 'playing';
+        // ✨ 재개 시 일시정지 동안 흐른 시간만큼 startTime을 뒤로 미룸
+        startTime += (performance.now() - pausedTime); 
         hideAllOverlays();
       }
     }
