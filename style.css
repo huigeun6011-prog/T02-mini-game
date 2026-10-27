@@ -1,28 +1,136 @@
-html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1e24; font-family: system-ui, sans-serif; color: #eee; }
-canvas { display: block; }
+/* ---------- 기본 레이아웃 ---------- */
+html, body { 
+  margin: 0; 
+  height: 100%; 
+  overflow: hidden; 
+  background: #1e1e24; 
+  font-family: system-ui, sans-serif; 
+  color: #eee; 
+}
+canvas { 
+  display: block; 
+  cursor: crosshair; 
+}
+
+/* ---------- HUD (좌상단) ---------- */
 #hud {
-position: fixed; top: 10px; left: 10px; font-size: 14px; line-height: 1.6;
-background: rgba(0,0,0,0.55); padding: 10px 14px; border-radius: 6px;
-pointer-events: none; white-space: pre-line;
+  position: fixed; 
+  top: 10px; 
+  left: 10px; 
+  font-size: 14px; 
+  line-height: 1.6;
+  background: rgba(0,0,0,0.55); 
+  padding: 10px 14px; 
+  border-radius: 6px;
+  pointer-events: none; 
+  white-space: pre-line;
 }
+
+/* ---------- 큐 UI (우상단) ---------- */
 #queue-ui {
-position: fixed; top: 10px; right: 10px; font-size: 14px;
-background: rgba(0,0,0,0.55); padding: 10px 14px; border-radius: 6px;
-pointer-events: none; display: flex; gap: 8px; align-items: center;
+  position: fixed; 
+  top: 10px; 
+  right: 10px; 
+  font-size: 14px;
+  background: rgba(0,0,0,0.55); 
+  padding: 10px 14px; 
+  border-radius: 6px;
+  pointer-events: none; 
+  display: flex; 
+  gap: 6px; 
+  align-items: center;
 }
-/* 333 번들 강조 스타일 */
+
+/* 큐 아이콘의 절대 위치 기준점 (역삼각형 배치용) */
+.q-item-wrapper {
+  position: relative;
+  display: flex; 
+  justify-content: center;
+  align-items: center;
+  width: 28px;
+  height: 28px;
+}
+
+/* 개별 도형 아이콘 */
+.q-item {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.q-item svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* 빈칸 표시 (사용한 자리) */
+.empty-slot {
+  width: 24px; 
+  height: 24px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+/* ---------- 역삼각형 인디케이터 (애니메이션) ---------- */
+.indicator {
+  position: absolute;
+  top: -16px; 
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  color: #ff4444;
+  text-shadow: 0 0 4px rgba(255, 68, 68, 0.8);
+  animation: bounce 0.8s infinite alternate ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes bounce {
+  from { transform: translateX(-50%) translateY(0); }
+  to { transform: translateX(-50%) translateY(-4px); }
+}
+
+/* ---------- 슬롯 UI (우측 하단, 큐보다 조금 아래) ---------- */
+#slot-ui {
+  position: fixed; 
+  top: 60px; 
+  right: 10px; 
+  background: rgba(0,0,0,0.55); 
+  padding: 10px 14px; 
+  border-radius: 6px;
+  pointer-events: none; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+}
+
+/* 슬롯 내부 아이콘 크기 확대 */
+#slot-ui .q-item {
+  width: 32px;
+  height: 32px;
+}
+
+/* 슬롯이 차 있을 때 테두리 표시 */
+.slot-border {
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- 특수 번들 (333 경고 표시) ---------- */
 .special-bundle {
   display: flex;
   gap: 6px;
-  background-color: rgba(255, 80, 80, 0.15); /* 반투명 붉은 배경 */
-  border: 2px dashed rgba(255, 80, 80, 0.8); /* 붉은 점선 테두리 */
+  background-color: rgba(255, 80, 80, 0.15);
+  border: 2px dashed rgba(255, 80, 80, 0.8);
   padding: 4px 8px;
   border-radius: 8px;
   position: relative;
   margin: 0 4px;
 }
-
-/* 경고 아이콘 */
 .special-bundle::before {
   content: "⚠️";
   position: absolute;
@@ -31,25 +139,50 @@ pointer-events: none; display: flex; gap: 8px; align-items: center;
   font-size: 14px;
   filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
 }
-.q-item {
-width: 24px;
-height: 24px;
-display: flex;
-align-items: center;
-justify-content: center;
-}
-.q-item svg {
-width: 100%;
-height: 100%;
+
+/* ---------- 슬롯에서 가져온 도형 덧그리기 ---------- */
+.slot-styled {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 2px dashed rgba(255, 255, 255, 0.4); /* 점선이 부자연스럽다면 실선(1px solid)으로 변경 가능 */
+  border-radius: 6px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* 결과 바 (전체 화면을 가리지 않음) */
+/* ---------- 오버레이 및 패널 (규칙, 일시정지, 결과) ---------- */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center; z-index: 20;
+}
+.overlay.hidden { display: none; }
+.panel {
+  background: #2a2a34; padding: 28px 32px; border-radius: 12px;
+  max-width: 520px; width: 90%; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+.panel h2 { margin: 0 0 16px; font-size: 20px; }
+.panel p, .panel li { font-size: 14px; line-height: 1.7; color: #ccc; }
+.panel ul { padding-left: 20px; margin: 8px 0; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+button {
+  background: #3a6ec0; color: #fff; border: none; padding: 10px 18px;
+  border-radius: 8px; font-size: 14px; cursor: pointer;
+}
+button:hover { background: #4a80d8; }
+button.secondary { background: #444; }
+button.secondary:hover { background: #555; }
+button.danger { background: #b03030; }
+button.danger:hover { background: #c84040; }
+button:disabled { background: #333; color: #777; cursor: not-allowed; }
+
+/* ---------- 결과 바 (하단 고정) ---------- */
 #resultBar {
-position: fixed; bottom: 0; left: 0; right: 0;
-background: rgba(42, 42, 52, 0.95); border-top: 1px solid #444;
-padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
-transform: translateY(100%); transition: transform 0.3s ease;
-z-index: 10;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: rgba(42, 42, 52, 0.95); border-top: 1px solid #444;
+  padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+  transform: translateY(100%); transition: transform 0.3s ease;
+  z-index: 10;
 }
 #resultBar.show { transform: translateY(0); }
 .result-info { display: flex; flex-direction: column; gap: 4px; }
@@ -58,33 +191,52 @@ z-index: 10;
 .result-title.fail { color: #e07070; }
 .result-desc { font-size: 14px; color: #ccc; margin: 0; }
 
-.overlay {
-position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-display: flex; align-items: center; justify-content: center; z-index: 20;
-}
-.overlay.hidden { display: none; }
-.panel {
-background: #2a2a34; padding: 28px 32px; border-radius: 12px;
-max-width: 520px; width: 90%; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-}
-.panel h2 { margin: 0 0 16px; font-size: 20px; }
-.panel p, .panel li { font-size: 14px; line-height: 1.7; color: #ccc; }
-.panel ul { padding-left: 20px; margin: 8px 0; }
-.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
-button {
-background: #3a6ec0; color: #fff; border: none; padding: 10px 18px;
-border-radius: 8px; font-size: 14px; cursor: pointer;
-}
-button:hover { background: #4a80d8; }
-button.secondary { background: #444; }
-button.secondary:hover { background: #555; }
-button.danger { background: #b03030; }
-button.danger:hover { background: #c84040; }
-button:disabled { background: #333; color: #777; cursor: not-allowed; }
+/* ---------- 저장/불러오기 슬롯 리스트 ---------- */
 .slot-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .slot-item {
-display: flex; align-items: center; justify-content: space-between;
-background: #333; padding: 10px 14px; border-radius: 8px; font-size: 13px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: #333; padding: 10px 14px; border-radius: 8px; font-size: 13px;
 }
 .slot-item .info { color: #aaa; }
 .slot-item button { padding: 6px 10px; font-size: 12px; }
+
+/* 큐 사이의 구분선 */
+.queue-divider {
+  width: 2px;
+  height: 24px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 0 6px;
+}
+
+/* 슬롯 기본 틀 (대칭을 위해 flex 중앙 정렬) */
+.slot-base {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+/* 슬롯이 비었을 때 */
+.slot-empty {
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.2);
+}
+/* 슬롯에 도형이 있을 때 */
+.slot-filled {
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+}
+/* 슬롯 잠금 상태 */
+.slot-locked {
+  position: relative;
+}
+.slot-locked::after {
+  content: "🔒";
+  position: absolute;
+  bottom: -6px;
+  right: -6px;
+  font-size: 14px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
+}

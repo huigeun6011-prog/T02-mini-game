@@ -111,30 +111,45 @@ function closestPointOnSegment(p, a, b) {
 // ---------- 큐 생성 ----------
 function buildQueue() {
   let sets = [];
-  for (let i = 0; i < 6; i++) sets.push(['square', 'tri', 'pent']);
-  sets.push(['square', 'tri', 'pent', 'rhombus']);
-  sets.push(['tri', 'tri', 'tri']);
+  for (let i = 0; i < 7; i++) {
+    sets.push(['square', 'tri', 'pent']);
+  }
+  
+  const rhombusIndex = Math.floor(Math.random() * 7) + 1; 
+  sets.splice(rhombusIndex, 0, ['rhombus']);
 
-  // 첫 묶음이 삼각형 묶음이 되지 않도록 보정
-  let firstSetIndex = 0;
-  let triSetIndex = sets.length - 1;
-  do { firstSetIndex = Math.floor(Math.random() * sets.length); } while (firstSetIndex === triSetIndex);
-  const temp = sets[0]; sets[0] = sets[firstSetIndex]; sets[firstSetIndex] = temp;
+  let triSetIndex = Math.floor(Math.random() * 8);
+  while (triSetIndex === 0 || triSetIndex === rhombusIndex) { 
+    triSetIndex = Math.floor(Math.random() * 8);
+  }
+  
+  // ✨ 333 번들 생성 시 특수 표식 부여
+  const triBundle = ['tri', 'tri', 'tri'];
+  triBundle.isSpecial = true; 
+  sets.splice(triSetIndex, 0, triBundle);
 
-  // 나머지 세트 섞기
-  const remainingSets = sets.slice(1).sort(() => Math.random() - 0.5);
-  sets = [sets[0], ...remainingSets];
-
-  // 각 세트 내부 도형 섞기
-  return sets.map(set => [...set].sort(() => Math.random() - 0.5));
+  return sets.map(set => {
+    // 내부 도형 섞기 (특수 표식은 유지)
+    const shuffled = [...set].sort(() => Math.random() - 0.5);
+    if (set.isSpecial) shuffled.isSpecial = true;
+    return shuffled;
+  });
 }
 
 function getNextType() {
-  if (shapeQueue.length === 0 && savedType) {
-    shapeQueue.push(savedType);
-    savedType = null;
-    updateQueueUI();
+  // 큐의 현재 인덱스가 범위를 벗어났고, 슬롯에 도형이 있다면 슬롯을 큐로 이동
+  // (이때가 "마지막 도형을 다 써서 슬롯의 도형을 들어야 하는 시점"임)
+  if (currentBundleIndex >= shapeQueue.length) {
+    if (savedType) {
+      shapeQueue.push([savedType]);
+      savedType = null;
+      updateQueueUI(); // 슬롯이 비워졌으므로 UI 갱신
+    } else {
+      return null;
+    }
   }
+  
+  // 현재 큐의 도형 반환
   if (shapeQueue.length > currentBundleIndex && 
       shapeQueue[currentBundleIndex].length > currentShapeIndex) {
     return shapeQueue[currentBundleIndex][currentShapeIndex];
@@ -447,82 +462,117 @@ function createShapeIcon(type) {
 
 // ✨ 큐 UI를 업데이트하는 함수
 function updateQueueUI() {
-  queueList.innerHTML = '';
+  const queueArea = document.getElementById('queue-area');
+  const slotArea = document.getElementById('slot-area');
   
-  // 1. 현재 묶음의 남은 도형들 (내가 들고 있는 도형 제외)
-  if (shapeQueue.length > currentBundleIndex) {
-    const currentBundle = shapeQueue[currentBundleIndex];
-    // ✨ 내가 들고 있는 도형(currentShapeIndex)은 제외하고 그 다음부터 렌더링
-    const remainingShapes = currentBundle.slice(currentShapeIndex + 1);
-    
-    if (remainingShapes.length > 0) {
-      // 남은 도형들이 333 번들인지 확인 (3개 모두 삼각형인지)
-      const isSpecialBundle = (remainingShapes.length === 3 && remainingShapes.every(t => t === 'tri'));
+  if (!queueArea || !slotArea) return;
+  
+  queueArea.innerHTML = '';
+  slotArea.innerHTML = '';
 
-      if (isSpecialBundle) {
-        // 333 번들 특수 래퍼 적용
-        const wrapper = document.createElement('div');
-        wrapper.className = 'special-bundle';
-        for (const type of remainingShapes) {
-          wrapper.appendChild(createShapeIcon(type));
-        }
-        queueList.appendChild(wrapper);
-      } else {
-        // 일반 묶음 렌더링
-        for (const type of remainingShapes) {
-          queueList.appendChild(createShapeIcon(type));
-        }
+  // 1. 현재 큐 영역 (3칸 고정)
+  const currentBundle = shapeQueue[currentBundleIndex] || [];
+  
+  // ✨ 수정: 길이가 아니라 특수 표식(isSpecial)으로 판별
+  const isTripleTri = currentBundle.isSpecial === true; 
+  const originalBundleSize = currentBundle.length + currentShapeIndex; 
+
+  // 3칸 렌더링
+  for (let i = 0; i < 3; i++) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'q-item-wrapper';
+
+    if (i < currentShapeIndex) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-slot';
+      wrapper.appendChild(empty);
+    } 
+    else if (i < originalBundleSize) {
+      if (i === currentShapeIndex) {
+        const indicator = document.createElement('div');
+        indicator.className = 'indicator';
+        indicator.textContent = '▼';
+        wrapper.appendChild(indicator);
       }
-    }
-  }
-
-  // 2. 다음 묶음의 첫 번째 도형 1개 추가 (세로선 구분 포함)
-  if (shapeQueue.length > currentBundleIndex + 1) {
-    const nextBundle = shapeQueue[currentBundleIndex + 1];
-    if (nextBundle.length > 0) {
-      const wrapper = document.createElement('div');
-      wrapper.style.display = 'flex';
-      wrapper.style.alignItems = 'center';
-      wrapper.style.marginLeft = '8px';
       
-      // 세로 구분선
-      const divider = document.createElement('div');
-      divider.style.width = '2px';
-      divider.style.height = '24px';
-      divider.style.backgroundColor = 'rgba(255,255,255,0.2)';
-      divider.style.marginRight = '8px';
-      wrapper.appendChild(divider);
-
-      // ✨ 다음 묶음이 333 번들인지 확인
-      const isNextSpecial = (nextBundle.length === 3 && nextBundle.every(t => t === 'tri'));
-      
-      if (isNextSpecial) {
-        // 다음 큐가 333 번들이면 스페셜 래퍼로 감싸기
+      const shapeType = currentBundle[i - currentShapeIndex];
+      if (isTripleTri) {
         const specialWrapper = document.createElement('div');
         specialWrapper.className = 'special-bundle';
-        specialWrapper.appendChild(createShapeIcon(nextBundle[0]));
+        specialWrapper.appendChild(createShapeIcon(shapeType));
         wrapper.appendChild(specialWrapper);
       } else {
-        // 일반 다음 큐
-        wrapper.appendChild(createShapeIcon(nextBundle[0]));
+        wrapper.appendChild(createShapeIcon(shapeType));
       }
-      
-      queueList.appendChild(wrapper);
+    } 
+    else {
+      const empty = document.createElement('div');
+      empty.className = 'empty-slot';
+      wrapper.appendChild(empty);
     }
+
+    queueArea.appendChild(wrapper);
   }
 
-  // 3. 저장 슬롯 UI 렌더링
-  const slotList = document.getElementById('slot-list');
-  slotList.innerHTML = '';
-  const slotEl = document.createElement('div');
-  slotEl.className = 'q-item';
+  // 2. 구분선
+  const divider = document.createElement('div');
+  divider.className = 'queue-divider';
+  queueArea.appendChild(divider);
+
+  // 3. 다음 큐 첫 번째 도형 (미리보기)
+  const nextBundleIndex = currentBundleIndex + 1;
+  let nextItem = null;
   
-  if (savedType) {
-    slotEl.innerHTML = createShapeIcon(savedType).innerHTML;
-  } else {
-    slotEl.innerHTML = `<div style="width:20px; height:20px; border:2px dashed #555; border-radius:4px;"></div>`;
+  if (shapeQueue.length > nextBundleIndex && shapeQueue[nextBundleIndex].length > 0) {
+    // 다음 큐도 333 번들인지 확인 (특수 표식 기반)
+    const isNextSpecial = shapeQueue[nextBundleIndex].isSpecial === true;
+    nextItem = { type: shapeQueue[nextBundleIndex][0], isSlot: false, isSpecial: isNextSpecial };
+  } else if (savedType) {
+    nextItem = { type: savedType, isSlot: true };
   }
-  slotList.appendChild(slotEl);
+
+  if (nextItem) {
+    const nextWrapper = document.createElement('div');
+    nextWrapper.className = 'q-item-wrapper';
+    
+    if (nextItem.isSpecial) {
+      const specialWrapper = document.createElement('div');
+      specialWrapper.className = 'special-bundle';
+      specialWrapper.appendChild(createShapeIcon(nextItem.type));
+      nextWrapper.appendChild(specialWrapper);
+    } else if (nextItem.isSlot) {
+      const slotWrapper = document.createElement('div');
+      slotWrapper.className = 'slot-styled';
+      slotWrapper.appendChild(createShapeIcon(nextItem.type));
+      nextWrapper.appendChild(slotWrapper);
+    } else {
+      nextWrapper.appendChild(createShapeIcon(nextItem.type));
+    }
+    queueArea.appendChild(nextWrapper);
+  } else {
+    const emptyNext = document.createElement('div');
+    emptyNext.className = 'q-item-wrapper';
+    emptyNext.innerHTML = `<div class="empty-slot"></div>`;
+    queueArea.appendChild(emptyNext);
+  }
+
+  // 4. 슬롯 렌더링
+  slotArea.innerHTML = '';
+  
+  // ✨ 수정: isTripleTri가 특수 표식 기반이므로, 남은 도형이 1개여도 잠금 유지됨
+  const isLocked = isTripleTri || (currentBundleIndex === replacedBundleIndex && currentShapeIndex === replacedShapeIndex);
+
+  const slotEl = document.createElement('div');
+  slotEl.className = 'slot-base ' + (savedType ? 'slot-filled' : 'slot-empty');
+  if (isLocked) slotEl.classList.add('slot-locked');
+
+  if (savedType) {
+    const icon = createShapeIcon(savedType);
+    icon.style.width = '28px';
+    icon.style.height = '28px';
+    slotEl.appendChild(icon);
+  }
+  slotArea.appendChild(slotEl);
 }
 
 function render() {
@@ -635,7 +685,6 @@ function resetGame() {
   view = { x: 0, y: 0, scale: 1 };
   resultBar.classList.remove('show');
   
-  // ✨ 인덱스 초기화
   currentBundleIndex = 0;
   currentShapeIndex = 0;
   replacedBundleIndex = -1;
@@ -645,16 +694,17 @@ function resetGame() {
   const cy = window.innerHeight / 2;
   const w = screenToWorld(cx, cy);
   
-  // ✨ 첫 번째 묶음의 첫 번째 도형을 꺼냄
-  const firstType = shapeQueue[currentBundleIndex][currentShapeIndex];
+  // ✨ 첫 번째 큐의 첫 번째 도형을 꺼내서 배치하고, 큐에서 제거
+  const currentBundle = shapeQueue[currentBundleIndex];
+  const firstType = currentBundle.shift(); // 배열에서 제거
   shapes.push({ type: firstType, x: w.x, y: w.y, rot: 0 });
   
-  // ✨ 꺼낸 도형은 큐에서 제거 (인덱스 증가)
-  currentShapeIndex++;
-  // 만약 첫 묶음에 도형이 1개뿐이었다면 다음 묶음으로 이동
-  if (currentShapeIndex >= shapeQueue[currentBundleIndex].length) {
+  // 만약 첫 번째 큐가 비었다면 다음 큐로 이동
+  if (currentBundle.length === 0) {
     currentBundleIndex++;
     currentShapeIndex = 0;
+  } else {
+    currentShapeIndex = 0; // 남은 도형의 첫 번째가 현재 들고 있는 도형
   }
   
   updateQueueUI();
@@ -932,14 +982,41 @@ canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (gameState !== 'playing') return;
   
+  // 1. 큐가 비었거나 현재 묶음이 없으면 중단
   if (shapeQueue.length === 0 || currentBundleIndex >= shapeQueue.length) return;
   
   const currentBundle = shapeQueue[currentBundleIndex];
-  if (currentShapeIndex >= currentBundle.length) return;
+  if (currentShapeIndex >= currentBundle.length) return; // 현재 묶음 다 씀
 
-  // [예외 2] 삼삼삼 번들인 경우 교체 불가
-  if (currentBundle.length === 3 && currentBundle.every(t => t === 'tri')) {
-    // ✨ alert 대신 툴팁 띄우기
+  const currentNext = currentBundle[currentShapeIndex];
+
+  // ✨ [추가] 맨 마지막 상황 체크 (현재 큐에 남은 도형이 1개뿐이고 다음 큐가 없을 때)
+  const isLastBundle = (currentBundleIndex === shapeQueue.length - 1);
+  const isLastShape = (currentBundle.length === 1);
+  
+  if (isLastBundle && isLastShape) {
+    errorMsg = '마지막 도형은 슬롯에 넣을 수 없습니다!';
+    tooltipX = mouse.sx;
+    tooltipY = mouse.sy - 20;
+    tooltipStartTime = performance.now();
+    clearTimeout(errorMsgTimer);
+    errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+    return;
+  }
+
+  // 2. 슬롯에 있는 도형과 현재 도형이 같으면 경고 (교체 무의미)
+  if (savedType === currentNext) {
+    errorMsg = '이미 같은 도형을 들고 있습니다.';
+    tooltipX = mouse.sx;
+    tooltipY = mouse.sy - 20;
+    tooltipStartTime = performance.now();
+    clearTimeout(errorMsgTimer);
+    errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+    return;
+  }
+
+  // 3. 삼삼삼 번들인 경우 교체 불가
+  if (currentBundle.isSpecial === true) { // ✨ 길이 대신 isSpecial 사용
     errorMsg = '삼각형 3개 번들은 교체할 수 없습니다!';
     tooltipX = mouse.sx;
     tooltipY = mouse.sy - 20;
@@ -949,9 +1026,8 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // [예외 1] 이미 이 조각을 교체했다면 재교체 불가
+  // 4. 이미 이 조각을 교체했다면 재교체 불가
   if (currentBundleIndex === replacedBundleIndex && currentShapeIndex === replacedShapeIndex) {
-    // ✨ alert 대신 툴팁 띄우기
     errorMsg = '이미 교체한 조각입니다. 배치 후 다시 시도하세요.';
     tooltipX = mouse.sx;
     tooltipY = mouse.sy - 20;
@@ -961,26 +1037,29 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  const currentNext = currentBundle[currentShapeIndex];
-
+  // 5. 교체 로직 수행
   if (!savedType) {
+    // 슬롯이 비어있으면 현재 도형을 슬롯으로 이동
     savedType = currentNext;
     currentBundle.splice(currentShapeIndex, 1); 
+    
     // splice로 인해 배열이 당겨지므로, 현재 인덱스가 배열 길이를 넘어가면 다음 묶음으로 넘김
     if (currentShapeIndex >= currentBundle.length) {
       currentBundleIndex++;
       currentShapeIndex = 0;
     }
   } else {
+    // 슬롯에 도형이 있으면 서로 교체(Swap)
     const temp = savedType;
     savedType = currentNext;
     currentBundle[currentShapeIndex] = temp;
   }
 
-  // 교체 락 기록
+  // 6. 교체 락 기록 (재교체 방지)
   replacedBundleIndex = currentBundleIndex;
   replacedShapeIndex = currentShapeIndex;
 
+  // 7. UI 및 미리보기 갱신
   updateQueueUI();
   preview = null;
   invalidPreview = null;
