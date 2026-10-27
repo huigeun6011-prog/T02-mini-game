@@ -234,7 +234,7 @@ function computeSnap(mwx, mwy) {
   else if (nextType === 'pent') base = PENT_VERTS;
 
   let best = null;
-  let invalidBest = null; 
+  let invalidBest = null;
   let checkedEdges = 0;
   lastRejectReason = '';
 
@@ -244,27 +244,26 @@ function computeSnap(mwx, mwy) {
       const a = verts[i], b = verts[(i + 1) % verts.length];
       const cp = closestPointOnSegment({ x: mwx, y: mwy }, a, b);
       
+      // [1단계] 마우스와 가까운 변 찾기 (SNAP_DIST 이내)
       if (dist({ x: mwx, y: mwy }, cp) > SNAP_DIST) continue;
       checkedEdges++;
 
+      // 내부 변(이미 다른 도형과 맞닿은 변) 제외
       let isInnerEdge = false;
       for (const other of shapes) {
         if (other === shape) continue;
         const ov = worldVerts(other);
         for (let k = 0; k < ov.length; k++) {
-          const oa = ov[k], ob = ov[(k + 1) % ov.length];
-          if (segmentsSharePositiveLength(a, b, oa, ob)) {
-            isInnerEdge = true;
-            break;
+          if (segmentsSharePositiveLength(a, b, ov[k], ov[(k + 1) % ov.length])) {
+            isInnerEdge = true; break;
           }
         }
         if (isInnerEdge) break;
       }
-      if (isInnerEdge) {
-        lastRejectReason = 'inner_edge';
-        continue; 
-      }
+      if (isInnerEdge) { lastRejectReason = 'inner_edge'; continue; }
 
+      // [2단계] 양쪽 방향 후보 생성
+      let candidates = [];
       for (let j = 0; j < base.length; j++) {
         const c0 = base[j], d0 = base[(j + 1) % base.length];
         for (const flip of [false, true]) {
@@ -274,115 +273,80 @@ function computeSnap(mwx, mwy) {
           const rot = Math.atan2(tvec.y, tvec.x) - Math.atan2(cvec.y, cvec.x);
           const rc0 = rotPoint(c0, rot);
           const cx = targetA.x - rc0.x, cy = targetA.y - rc0.y;
-          const candidate = { type: nextType, x: cx, y: cy, rot };
-          const candVerts = worldVerts(candidate);
-
-          if (sharesEdgeWithSameType(candVerts, nextType)) {
-            lastRejectReason = 'same_type';
-            continue;
-          }
-
-          // ✨ 로그 추가 1
-          // console.log(`[시도] 새 도형(${nextType}) -> 기존 도형(${shape.type})`);
-
-          // ✨ ownerRegions 변수를 try 블록 바깥에서 선언
-          let ownerRegions = [];
+          const candVerts = worldVerts({ type: nextType, x: cx, y: cy, rot });
+          
+          // ✨ 소유자와의 겹침 면적 계산 (내부/외부 판별)
           let ownerOverlapArea = 0;
-          
           try {
-            ownerRegions = getOverlapRegions(candVerts, verts);
-            for (const reg of ownerRegions) {
-              const area = Math.abs(polygonArea(reg));
-              if (isNaN(area)) {
-                console.warn(`  - 폴리곤 넓이 계산이 NaN입니다! reg:`, reg);
+            const inter = polygonClipping.intersection(toMultiPolygon(candVerts), toMultiPolygon(verts));
+            if (inter && inter.length > 0) {
+              for (const poly of inter) for (const ring of poly) {
+                ownerOverlapArea += Math.abs(ringArea(ring));
               }
-              ownerOverlapArea += area;
             }
-            // console.log(`  - 중간 계산 완료. ownerOverlapArea:`, ownerOverlapArea);
-          } catch (err) {
-            // console.error(`  - [에러 발생] getOverlapRegions 또는 polygonArea 실행 중 오류:`, err);
-            continue; // 에러가 나면 이 후보는 버림
-          }
-          
-          let candArea = 0;
-          if (nextType === 'square') candArea = SQ_AREA;
-          else if (nextType === 'tri') candArea = TRI_AREA;
-          else if (nextType === 'pent') candArea = PENT_AREA;
-          else if (nextType === 'rhombus') candArea = RHOMBUS_AREA; // ✨ 수정 및 순서 변경
-          
-          let ownerArea = 0;
-          if (shape.type === 'square') ownerArea = SQ_AREA;
-          else if (shape.type === 'tri') ownerArea = TRI_AREA;
-          else if (shape.type === 'pent') ownerArea = PENT_AREA;
-          else if (shape.type === 'rhombus') ownerArea = RHOMBUS_AREA; // ✨ 추가
-          
-
-          if (candArea === 0 || ownerArea === 0) {
-            console.warn(`[경고] 넓이 계산 실패! nextType: ${nextType}, shape.type: ${shape.type}`);
-            continue; 
+          } catch (e) {
+            ownerOverlapArea = 9999; // 에러 시 강제 탈락
           }
 
-          const minArea = Math.min(candArea, ownerArea);
-          const overlapRatio = ownerOverlapArea / minArea;
+          // ✨ [핵심] 소유자와 0.1 이상 겹치면 내부로 파고드는 후보이므로 버림
+          if (ownerOverlapArea > 0.1) continue;
 
-          if (ownerOverlapArea > 0) {
-            // console.log(`  - 겹친 넓이: ${ownerOverlapArea.toFixed(2)}, 비율: ${(overlapRatio * 100).toFixed(4)}%`);
-          }
-
-          // [3단계] 수정된 포개짐 검증
-          if (ownerOverlapArea >= minArea * 0.999) {
-            lastRejectReason = 'fully_inside_owner';
-            continue; 
-          }
-
-          // 4. 다른 도형들과의 겹침 체크 (오류 표시용)
-          let overlapRegions = [];
-          let overlapWith = null;
-          for (const other of shapes) {
-            if (other === shape) continue; // 소유자는 이미 2단계에서 처리함
-            const regions = getOverlapRegions(candVerts, worldVerts(other));
-            if (regions.length > 0) {
-              overlapRegions = regions;
-              overlapWith = other;
-              break; 
-            }
-          }
-          
-          // 소유자와 부분적으로 겹치거나, 다른 도형과 겹치는 경우
-          if (ownerOverlapArea > 0 || overlapRegions.length > 0) {
-            lastRejectReason = 'overlap';
-            
-            if (ownerRegions.length > 0) {
-              overlapRegions = overlapRegions.concat(ownerRegions);
-              if (!overlapWith) overlapWith = shape;
-            }
-
-            const dMouse = Math.hypot(cx - mwx, cy - mwy);
-            if (!invalidBest || dMouse < invalidBest.dist) {
-              
-              // ✨ [로그 추가] 오류 후보가 갱신될 때마다 상세 정보 출력
-              // console.log(`[오류 후보 발견] 마우스: (${mwx.toFixed(1)}, ${mwy.toFixed(1)})`);
-              // console.log(`  - 새 도형: ${nextType}, 기존 도형: ${shape.type}`);
-              // console.log(`  - 겹친 넓이: ${ownerOverlapArea.toFixed(2)}, 비율: ${(overlapRatio*100).toFixed(2)}%`);
-              // console.log(`  - 좌표: (${cx.toFixed(1)}, ${cy.toFixed(1)}), 회전: ${rot.toFixed(2)}`);
-              
-              invalidBest = { x: cx, y: cy, rot, type: nextType, dist: dMouse, overlapRegions, overlapWith };
-            }
-            continue;
-          }
-
-          // 5. 모든 검사를 통과한 정상 후보
+          // 마우스와의 거리 계산 (방향 결정용)
           const dMouse = Math.hypot(cx - mwx, cy - mwy);
-          if (!best || dMouse < best.dist) {
-            best = { x: cx, y: cy, rot, type: nextType, dist: dMouse };
+          candidates.push({ x: cx, y: cy, rot, dMouse, candVerts });
+        }
+      }
+
+      // ✨ [3단계] 살아남은 후보 중 마우스와 가장 가까운 쪽 선택 (마름모 방향 결정)
+      if (candidates.length === 0) continue;
+      candidates.sort((x, y) => x.dMouse - y.dMouse);
+      const chosen = candidates[0];
+
+      // [4단계] 최종 겹침 검사 (소유자를 포함한 모든 기존 도형 대상)
+      let finalOverlapRegions = [];
+      let overlapWith = null;
+      let hasOverlap = false;
+
+      for (const other of shapes) {
+        try {
+          const inter = polygonClipping.intersection(
+            toMultiPolygon(chosen.candVerts), 
+            toMultiPolygon(worldVerts(other))
+          );
+          if (inter && inter.length > 0) {
+            for (const poly of inter) for (const ring of poly) {
+              if (Math.abs(ringArea(ring)) > 1e-6) {
+                hasOverlap = true;
+                finalOverlapRegions.push(ring);
+                overlapWith = other;
+              }
+            }
           }
+        } catch (e) {
+          hasOverlap = true; // 예외 시 보수적 처리
+          overlapWith = other;
+        }
+        if (hasOverlap) break;
+      }
+
+      const dMouseFinal = Math.hypot(chosen.x - mwx, chosen.y - mwy);
+
+      if (hasOverlap) {
+        // 다른 도형과 겹침 (오류 후보)
+        if (!invalidBest || dMouseFinal < invalidBest.dist) {
+          invalidBest = { x: chosen.x, y: chosen.y, rot: chosen.rot, type: nextType, dist: dMouseFinal, overlapRegions: finalOverlapRegions, overlapWith };
+        }
+      } else {
+        // 정상 배치
+        if (!best || dMouseFinal < best.dist) {
+          best = { x: chosen.x, y: chosen.y, rot: chosen.rot, type: nextType, dist: dMouseFinal };
         }
       }
     }
   }
 
-  if (!best && !invalidBest) {
-    if (checkedEdges === 0) lastRejectReason = 'no_edges';
+  if (!best && !invalidBest && checkedEdges === 0) {
+    lastRejectReason = 'no_edges';
   }
 
   return { best, invalid: best ? null : invalidBest };
@@ -654,10 +618,13 @@ function render() {
   }
 
   // 6. HUD 업데이트 (기존 로직 유지)
-  const pct = computeFillPercent();  
+  const rawPct = computeFillPercent();
+  // ✨ HUD에서도 소수점 셋째 자리 이하 버림
+  const displayPct = Math.floor(rawPct * 100) / 100; 
+  
   hud.textContent =
     `${shapes.length} / ${TOTAL_SHAPES}\n` +
-    `채움: ${pct.toFixed(1)}% (목표 ${TARGET_PCT}%)\n` +
+    `채움: ${displayPct.toFixed(2)}% (목표 ${TARGET_PCT}%)\n` +
     `줌: ${view.scale.toFixed(2)}x`;
 }
 function loop() { render(); requestAnimationFrame(loop); }
@@ -704,16 +671,20 @@ function goHome() {
 
 // ---------- 결과 판정 ----------
 function checkResult() {
-  const pct = computeFillPercent();
-  const success = pct >= TARGET_PCT;
+  const rawPct = computeFillPercent();
+  // ✨ 소수점 셋째 자리 이하 버림 (예: 79.999 -> 79.99)
+  const truncatedPct = Math.floor(rawPct * 100) / 100; 
+  
+  const success = truncatedPct >= TARGET_PCT;
   gameState = 'result';
   
   resultTitle.textContent = success ? '성공!' : '실패';
   resultTitle.className = 'result-title ' + (success ? 'success' : 'fail');
-  resultDesc.textContent = `채움 비율: ${pct.toFixed(1)}% (목표 ${TARGET_PCT}%)`;
+  // ✨ 버림 처리된 값을 소수점 둘째 자리까지 표시
+  resultDesc.textContent = `채움 비율: ${truncatedPct.toFixed(2)}% (목표 ${TARGET_PCT}%)`;
   
   hideAllOverlays();
-  resultBar.classList.add('show'); // 하단 바 올라오기
+  resultBar.classList.add('show');
 }
 
 // ---------- 저장/불러오기 ----------
@@ -900,7 +871,7 @@ canvas.addEventListener('click', (e) => {
   // 1. 정상 스냅 후보가 있을 때만 배치
   if (preview) {
     shapes.push({ type: nextT, x: preview.x, y: preview.y, rot: preview.rot });
-    console.log(`[배치 성공] 도형: ${nextT}`);
+    // console.log(`[배치 성공] 도형: ${nextT}`);
     
     // 큐에서 제거
     if (shapeQueue.length > 0) shapeQueue.shift();
