@@ -1,7 +1,7 @@
 import { polygonHull, polygonArea } from 'https://cdn.jsdelivr.net/npm/d3-polygon@3/+esm';
 
 // ---------- 설정 ----------
-const TOTAL_SHAPES = 22;
+const TOTAL_SHAPES = 25;
 const TARGET_PCT = 80;
 const SIDE = 60;
 const SQ_VERTS = [
@@ -68,6 +68,10 @@ let errorMsgTimer = null;
 let tooltipX = 0;
 let tooltipY = 0;
 let tooltipStartTime = 0;
+let currentBundleIndex = 0; // 현재 진행 중인 묶음 인덱스
+let currentShapeIndex = 0;  // 현재 묶음 내에서 꺼낼 도형 인덱스
+let replacedBundleIndex = -1; // 교체가 일어난 묶음 번호 (재교체 방지용)
+let replacedShapeIndex = -1;  // 교체가 일어난 묶음 내 위치 (재교체 방지용)
 
 // ---------- 유틸 ----------
 function rotPoint(p, ang) {
@@ -106,17 +110,23 @@ function closestPointOnSegment(p, a, b) {
 
 // ---------- 큐 생성 ----------
 function buildQueue() {
-  let pool = [];
-  const setCount = Math.floor(TOTAL_SHAPES / 3);
-  for (let i = 0; i < setCount; i++) {
-    let set = (i === 3) ? ['square', 'tri', 'pent', 'rhombus'] : ['square', 'tri', 'pent'];
-    const shuffled = [...set].sort(() => Math.random() - 0.5);
-    pool.push(...shuffled);
-  }
-  while (pool.length < TOTAL_SHAPES) {
-    pool.push(['square', 'tri', 'pent', 'rhombus'][Math.floor(Math.random() * 4)]);
-  }
-  return pool.slice(0, TOTAL_SHAPES);
+  let sets = [];
+  for (let i = 0; i < 6; i++) sets.push(['square', 'tri', 'pent']);
+  sets.push(['square', 'tri', 'pent', 'rhombus']);
+  sets.push(['tri', 'tri', 'tri']);
+
+  // 첫 묶음이 삼각형 묶음이 되지 않도록 보정
+  let firstSetIndex = 0;
+  let triSetIndex = sets.length - 1;
+  do { firstSetIndex = Math.floor(Math.random() * sets.length); } while (firstSetIndex === triSetIndex);
+  const temp = sets[0]; sets[0] = sets[firstSetIndex]; sets[firstSetIndex] = temp;
+
+  // 나머지 세트 섞기
+  const remainingSets = sets.slice(1).sort(() => Math.random() - 0.5);
+  sets = [sets[0], ...remainingSets];
+
+  // 각 세트 내부 도형 섞기
+  return sets.map(set => [...set].sort(() => Math.random() - 0.5));
 }
 
 function getNextType() {
@@ -125,7 +135,11 @@ function getNextType() {
     savedType = null;
     updateQueueUI();
   }
-  return shapeQueue.length > 0 ? shapeQueue[0] : null;
+  if (shapeQueue.length > currentBundleIndex && 
+      shapeQueue[currentBundleIndex].length > currentShapeIndex) {
+    return shapeQueue[currentBundleIndex][currentShapeIndex];
+  }
+  return null;
 }
 
 // ---------- 순수 수학: 다각형 교차 넓이 계산 (Sutherland-Hodgman) ----------
@@ -402,48 +416,109 @@ function drawShape(shape, opts = {}) {
   if (opts.stroke) { ctx.strokeStyle = opts.stroke; ctx.lineWidth = opts.lineWidth || 2; ctx.stroke(); }
 }
 
+// ✨ 도형 아이콘을 생성하는 헬퍼 함수 (중복 제거)
+function createShapeIcon(type) {
+  const el = document.createElement('div');
+  el.className = 'q-item';
+  
+  let svgContent = '', color = '';
+  if (type === 'square') { 
+    color = '#4a80d8'; 
+    svgContent = `<rect x="4" y="4" width="16" height="16" fill="${color}" />`; 
+  } else if (type === 'tri') { 
+    color = '#d8804a'; 
+    svgContent = `<polygon points="12,4 20,20 4,20" fill="${color}" />`; 
+  } else if (type === 'rhombus') { 
+    color = '#50c8b4'; 
+    svgContent = `<polygon points="12,2 22,12 12,22 2,12" fill="${color}" />`; 
+  } else if (type === 'pent') { 
+    color = '#8a4ad8'; 
+    const pts = [];
+    for (let k = 0; k < 5; k++) {
+      const ang = -Math.PI / 2 + k * (2 * Math.PI / 5);
+      pts.push(`${12 + 9 * Math.cos(ang)},${12 + 9 * Math.sin(ang)}`);
+    }
+    svgContent = `<polygon points="${pts.join(' ')}" fill="${color}" />`;
+  }
+  
+  el.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgContent}</svg>`;
+  return el;
+}
+
+// ✨ 큐 UI를 업데이트하는 함수
 function updateQueueUI() {
   queueList.innerHTML = '';
-  for (let i = 1; i < Math.min(4, shapeQueue.length); i++) { 
-    const t = shapeQueue[i];
-    const el = document.createElement('div');
-    el.className = 'q-item';
-    let svgContent = '', color = '';
-    if (t === 'square') { color = '#4a80d8'; svgContent = `<rect x="4" y="4" width="16" height="16" fill="${color}" />`; }
-    else if (t === 'tri') { color = '#d8804a'; svgContent = `<polygon points="12,4 20,20 4,20" fill="${color}" />`; }
-    else if (t === 'rhombus') { color = '#50c8b4'; svgContent = `<polygon points="12,2 22,12 12,22 2,12" fill="${color}" />`; }
-    else if (t === 'pent') { 
-      color = '#8a4ad8'; 
-      const pts = [];
-      for (let k = 0; k < 5; k++) {
-        const ang = -Math.PI / 2 + k * (2 * Math.PI / 5);
-        pts.push(`${12 + 9 * Math.cos(ang)},${12 + 9 * Math.sin(ang)}`);
+  
+  // 1. 현재 묶음의 남은 도형들 (내가 들고 있는 도형 제외)
+  if (shapeQueue.length > currentBundleIndex) {
+    const currentBundle = shapeQueue[currentBundleIndex];
+    // ✨ 내가 들고 있는 도형(currentShapeIndex)은 제외하고 그 다음부터 렌더링
+    const remainingShapes = currentBundle.slice(currentShapeIndex + 1);
+    
+    if (remainingShapes.length > 0) {
+      // 남은 도형들이 333 번들인지 확인 (3개 모두 삼각형인지)
+      const isSpecialBundle = (remainingShapes.length === 3 && remainingShapes.every(t => t === 'tri'));
+
+      if (isSpecialBundle) {
+        // 333 번들 특수 래퍼 적용
+        const wrapper = document.createElement('div');
+        wrapper.className = 'special-bundle';
+        for (const type of remainingShapes) {
+          wrapper.appendChild(createShapeIcon(type));
+        }
+        queueList.appendChild(wrapper);
+      } else {
+        // 일반 묶음 렌더링
+        for (const type of remainingShapes) {
+          queueList.appendChild(createShapeIcon(type));
+        }
       }
-      svgContent = `<polygon points="${pts.join(' ')}" fill="${color}" />`;
     }
-    el.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgContent}</svg>`;
-    queueList.appendChild(el);
   }
 
+  // 2. 다음 묶음의 첫 번째 도형 1개 추가 (세로선 구분 포함)
+  if (shapeQueue.length > currentBundleIndex + 1) {
+    const nextBundle = shapeQueue[currentBundleIndex + 1];
+    if (nextBundle.length > 0) {
+      const wrapper = document.createElement('div');
+      wrapper.style.display = 'flex';
+      wrapper.style.alignItems = 'center';
+      wrapper.style.marginLeft = '8px';
+      
+      // 세로 구분선
+      const divider = document.createElement('div');
+      divider.style.width = '2px';
+      divider.style.height = '24px';
+      divider.style.backgroundColor = 'rgba(255,255,255,0.2)';
+      divider.style.marginRight = '8px';
+      wrapper.appendChild(divider);
+
+      // ✨ 다음 묶음이 333 번들인지 확인
+      const isNextSpecial = (nextBundle.length === 3 && nextBundle.every(t => t === 'tri'));
+      
+      if (isNextSpecial) {
+        // 다음 큐가 333 번들이면 스페셜 래퍼로 감싸기
+        const specialWrapper = document.createElement('div');
+        specialWrapper.className = 'special-bundle';
+        specialWrapper.appendChild(createShapeIcon(nextBundle[0]));
+        wrapper.appendChild(specialWrapper);
+      } else {
+        // 일반 다음 큐
+        wrapper.appendChild(createShapeIcon(nextBundle[0]));
+      }
+      
+      queueList.appendChild(wrapper);
+    }
+  }
+
+  // 3. 저장 슬롯 UI 렌더링
   const slotList = document.getElementById('slot-list');
   slotList.innerHTML = '';
   const slotEl = document.createElement('div');
   slotEl.className = 'q-item';
+  
   if (savedType) {
-    let svgContent = '', color = '';
-    if (savedType === 'square') { color = '#4a80d8'; svgContent = `<rect x="4" y="4" width="16" height="16" fill="${color}" />`; }
-    else if (savedType === 'tri') { color = '#d8804a'; svgContent = `<polygon points="12,4 20,20 4,20" fill="${color}" />`; }
-    else if (savedType === 'rhombus') { color = '#50c8b4'; svgContent = `<polygon points="12,2 22,12 12,22 2,12" fill="${color}" />`; }
-    else if (savedType === 'pent') {
-      color = '#8a4ad8';
-      const pts = [];
-      for (let k = 0; k < 5; k++) {
-        const ang = -Math.PI / 2 + k * (2 * Math.PI / 5);
-        pts.push(`${12 + 9 * Math.cos(ang)},${12 + 9 * Math.sin(ang)}`);
-      }
-      svgContent = `<polygon points="${pts.join(' ')}" fill="${color}" />`;
-    }
-    slotEl.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${svgContent}</svg>`;
+    slotEl.innerHTML = createShapeIcon(savedType).innerHTML;
   } else {
     slotEl.innerHTML = `<div style="width:20px; height:20px; border:2px dashed #555; border-radius:4px;"></div>`;
   }
@@ -472,10 +547,11 @@ function render() {
       else { drawX = mouse.wx; drawY = mouse.wy; drawRot = 0; isSnapped = false; }
 
       const handShape = { type: nextT, x: drawX, y: drawY, rot: drawRot };
-      const color = nextT === 'square' ? 'rgba(80,140,220,0.35)'
-                  : nextT === 'tri' ? 'rgba(220,140,80,0.35)'
-                  : nextT === 'pent' ? 'rgba(138,74,216,0.35)'
-                  : 'rgba(80, 200, 180, 0.35)';
+      let color;
+      if (nextT === 'square') color = 'rgba(80,140,220,0.35)';
+      else if (nextT === 'tri') color = 'rgba(220,140,80,0.35)';
+      else if (nextT === 'pent') color = 'rgba(138,74,216,0.35)';
+      else color = 'rgba(80, 200, 180, 0.35)'; // rhombus
                   
       ctx.globalAlpha = isSnapped ? 1.0 : 0.4; 
       drawShape(handShape, { fill: color, stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 });
@@ -559,11 +635,27 @@ function resetGame() {
   view = { x: 0, y: 0, scale: 1 };
   resultBar.classList.remove('show');
   
+  // ✨ 인덱스 초기화
+  currentBundleIndex = 0;
+  currentShapeIndex = 0;
+  replacedBundleIndex = -1;
+  replacedShapeIndex = -1;
+
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
   const w = screenToWorld(cx, cy);
-  const firstType = shapeQueue.shift();
+  
+  // ✨ 첫 번째 묶음의 첫 번째 도형을 꺼냄
+  const firstType = shapeQueue[currentBundleIndex][currentShapeIndex];
   shapes.push({ type: firstType, x: w.x, y: w.y, rot: 0 });
+  
+  // ✨ 꺼낸 도형은 큐에서 제거 (인덱스 증가)
+  currentShapeIndex++;
+  // 만약 첫 묶음에 도형이 1개뿐이었다면 다음 묶음으로 이동
+  if (currentShapeIndex >= shapeQueue[currentBundleIndex].length) {
+    currentBundleIndex++;
+    currentShapeIndex = 0;
+  }
   
   updateQueueUI();
 }
@@ -601,13 +693,18 @@ function checkResult() {
 // ---------- 저장/불러오기 ----------
 function serializeState() {
   return {
-    version: 2,
+    version: 3, // ✨ 버전 업
     shapes: shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot })),
-    queue: [...shapeQueue],
+    queue: JSON.parse(JSON.stringify(shapeQueue)), // 2차원 배열 복사
+    currentBundleIndex,
+    currentShapeIndex,
+    replacedBundleIndex,
+    replacedShapeIndex,
     view: { x: view.x, y: view.y, scale: view.scale },
     savedAt: new Date().toISOString(),
   };
 }
+// loadFromSlot에서 version === 3 조건 확인 및 변수 복원
 function saveToSlot(i) {
   try { localStorage.setItem(SAVE_PREFIX + i, JSON.stringify(serializeState())); return true; } 
   catch (e) { return false; }
@@ -617,7 +714,7 @@ function loadFromSlot(i) {
     const raw = localStorage.getItem(SAVE_PREFIX + i);
     if (!raw) return false;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 2 || !Array.isArray(data.shapes)) return false;
+    if (!data || data.version !== 3 || !Array.isArray(data.shapes)) return false;
     shapes = data.shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot }));
     shapeQueue = Array.isArray(data.queue) ? [...data.queue] : [];
     view = data.view && typeof data.view.x === 'number' ? { x: data.view.x, y: data.view.y, scale: data.view.scale } : { x: 0, y: 0, scale: 1 };
@@ -765,9 +862,26 @@ canvas.addEventListener('click', (e) => {
   if (preview) {
     shapes.push({ type: nextT, x: preview.x, y: preview.y, rot: preview.rot });
     
-    if (shapeQueue.length > 0) shapeQueue.shift();
-    else if (savedType) savedType = null;
-    
+    // 큐에서 제거 및 인덱스 이동
+    if (shapeQueue.length > currentBundleIndex) {
+      const currentBundle = shapeQueue[currentBundleIndex];
+      if (currentShapeIndex < currentBundle.length) {
+        currentBundle.splice(currentShapeIndex, 1);
+      }
+      
+      // 현재 묶음을 다 썼다면 다음 묶음으로 이동
+      if (currentBundle.length === 0 || currentShapeIndex >= currentBundle.length) {
+        currentBundleIndex++;
+        currentShapeIndex = 0;
+      }
+    } else if (savedType) {
+      savedType = null;
+    }
+
+    // ✨ [예외 1 해제] 도형이 배치되었으므로 교체 락 해제
+    replacedBundleIndex = -1;
+    replacedShapeIndex = -1;
+
     updateQueueUI();
     errorMsg = '';
     
@@ -817,18 +931,55 @@ canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefaul
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (gameState !== 'playing') return;
-  if (shapeQueue.length === 0) return;
+  
+  if (shapeQueue.length === 0 || currentBundleIndex >= shapeQueue.length) return;
+  
+  const currentBundle = shapeQueue[currentBundleIndex];
+  if (currentShapeIndex >= currentBundle.length) return;
 
-  const currentNext = shapeQueue[0];
+  // [예외 2] 삼삼삼 번들인 경우 교체 불가
+  if (currentBundle.length === 3 && currentBundle.every(t => t === 'tri')) {
+    // ✨ alert 대신 툴팁 띄우기
+    errorMsg = '삼각형 3개 번들은 교체할 수 없습니다!';
+    tooltipX = mouse.sx;
+    tooltipY = mouse.sy - 20;
+    tooltipStartTime = performance.now();
+    clearTimeout(errorMsgTimer);
+    errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+    return;
+  }
+
+  // [예외 1] 이미 이 조각을 교체했다면 재교체 불가
+  if (currentBundleIndex === replacedBundleIndex && currentShapeIndex === replacedShapeIndex) {
+    // ✨ alert 대신 툴팁 띄우기
+    errorMsg = '이미 교체한 조각입니다. 배치 후 다시 시도하세요.';
+    tooltipX = mouse.sx;
+    tooltipY = mouse.sy - 20;
+    tooltipStartTime = performance.now();
+    clearTimeout(errorMsgTimer);
+    errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+    return;
+  }
+
+  const currentNext = currentBundle[currentShapeIndex];
 
   if (!savedType) {
     savedType = currentNext;
-    shapeQueue.shift();
+    currentBundle.splice(currentShapeIndex, 1); 
+    // splice로 인해 배열이 당겨지므로, 현재 인덱스가 배열 길이를 넘어가면 다음 묶음으로 넘김
+    if (currentShapeIndex >= currentBundle.length) {
+      currentBundleIndex++;
+      currentShapeIndex = 0;
+    }
   } else {
     const temp = savedType;
     savedType = currentNext;
-    shapeQueue[0] = temp;
+    currentBundle[currentShapeIndex] = temp;
   }
+
+  // 교체 락 기록
+  replacedBundleIndex = currentBundleIndex;
+  replacedShapeIndex = currentShapeIndex;
 
   updateQueueUI();
   preview = null;

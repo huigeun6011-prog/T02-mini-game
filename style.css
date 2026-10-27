@@ -10,6 +10,27 @@ position: fixed; top: 10px; right: 10px; font-size: 14px;
 background: rgba(0,0,0,0.55); padding: 10px 14px; border-radius: 6px;
 pointer-events: none; display: flex; gap: 8px; align-items: center;
 }
+/* 333 번들 강조 스타일 */
+.special-bundle {
+  display: flex;
+  gap: 6px;
+  background-color: rgba(255, 80, 80, 0.15); /* 반투명 붉은 배경 */
+  border: 2px dashed rgba(255, 80, 80, 0.8); /* 붉은 점선 테두리 */
+  padding: 4px 8px;
+  border-radius: 8px;
+  position: relative;
+  margin: 0 4px;
+}
+
+/* 경고 아이콘 */
+.special-bundle::before {
+  content: "⚠️";
+  position: absolute;
+  top: -10px;
+  left: -8px;
+  font-size: 14px;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+}
 .q-item {
 width: 24px;
 height: 24px;
