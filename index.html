@@ -4,96 +4,251 @@
   <meta charset="UTF-8">
   <title>도형 배치 게임</title>
   <link rel="stylesheet" href="style.css">
-  <style>
-    /* 시작 페이지 전용 스타일 */
-    .start-screen {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      background: #1e1e24;
-      color: #eee;
-    }
-    .start-title {
-      font-size: 2.5rem;
-      margin-bottom: 40px;
-      font-weight: bold;
-      letter-spacing: 2px;
-    }
-    .mode-container {
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .mode-card {
-      width: 220px;
-      height: 300px;
-      background: #2a2a34;
-      border: 2px solid #444;
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
-      text-decoration: none;
-      color: #eee;
-    }
-    .mode-card:hover {
-      transform: translateY(-5px);
-      border-color: #3a6ec0;
-      box-shadow: 0 8px 20px rgba(58, 110, 192, 0.3);
-    }
-    .mode-icon {
-      font-size: 3rem;
-      margin-bottom: 20px;
-    }
-    .mode-name {
-      font-size: 1.5rem;
-      font-weight: bold;
-      margin-bottom: 10px;
-    }
-    .mode-desc {
-      font-size: 0.9rem;
-      color: #aaa;
-      text-align: center;
-      padding: 0 20px;
-      line-height: 1.5;
-    }
-    /* 모드별 색상 포인트 */
-    .mode-easy { border-top: 4px solid #50c8b4; }
-    .mode-hard { border-top: 4px solid #e05050; }
-    .mode-practice { border-top: 4px solid #8a4ad8; }
-  </style>
 </head>
 <body>
-  <div class="start-screen">
-    <div class="start-title">도형 배치 게임</div>
+  <div class="intro-screen" id="introScreen">
+    <!-- 맞닿아 있는 제목 -->
+    <div class="title-container">
+      <div class="title-half left">EDGE</div>
+      <div class="title-half right">EDGE</div>
+    </div>
+
+    <!-- 클릭 시 나타날 메뉴 -->
     <div class="mode-container">
-      <!-- 쉬움 -->
+      <!-- 튜토리얼 (세모) -->
+      <div class="mode-card mode-tutorial" id="tutorialCard">
+        <div class="mode-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="12,4 20,20 4,20" fill="#d8804a" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="mode-name">튜토리얼</div>
+        <div class="mode-desc">게임 방법을<br>이미지로 확인하세요.</div>
+      </div>
+      <!-- 쉬움: 사각형 (파란색) -->
       <a href="easy.html?mode=easy" class="mode-card mode-easy">
-      <div class="mode-icon">🟢</div>
-      <div class="mode-name">쉬움</div>
-      <div class="mode-desc">삼각형과 사각형만 사용하여<br>기본기를 익혀보세요.</div>
+        <div class="mode-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="4" width="16" height="16" fill="#4a80d8" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="mode-name">쉬움</div>
+        <div class="mode-desc">삼각형과 사각형만 사용하여<br>기본기를 익혀보세요.</div>
       </a>
 
-      <!-- 어려움 (현재 페이지로 연결) -->
-      <a href="game.html" class="mode-card mode-hard">
-        <div class="mode-icon">🔴</div>
+      <!-- 어려움: 오각형 (보라색) -->
+      <a href="game.html?mode=hard" class="mode-card mode-hard">
+        <div class="mode-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="12,3 20.56,9.22 17.29,19.28 6.71,19.28 3.44,9.22" fill="#8a4ad8" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>
+          </svg>
+        </div>
         <div class="mode-name">어려움</div>
         <div class="mode-desc">모든 도형을 활용해<br>80% 이상의 채움률에 도전하세요.</div>
       </a>
 
-      <!-- 전략실 -->
+      <!-- 전략실: 마름모 (청록색) -->
       <a href="practice.html?mode=practice" class="mode-card mode-practice">
-        <div class="mode-icon">🟣</div>
+        <div class="mode-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <!-- ✨ 수학적으로 정확한 60도-120도 마름모 (가로:세로 = √3:1) -->
+            <polygon points="12,5.1 24,12 12,18.9 0,12" fill="#50c8b4" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>
+          </svg>
+        </div>
         <div class="mode-name">전략실</div>
         <div class="mode-desc">배치 순서를 마음대로<br>연습해 볼 수 있는 공간입니다.</div>
       </a>
     </div>
   </div>
+    <!-- ✨ 튜토리얼 모달 -->
+  <div id="tutorialModal" class="tutorial-modal hidden">
+    <div class="tutorial-box">
+      <button class="tutorial-close" id="btnCloseTutorial">×</button>
+      
+      <!-- 이미지 영역 -->
+      <div class="tutorial-image-area">
+        <img id="tutorialImg" src="" alt="튜토리얼 이미지">
+      </div>
+      
+        <div class="tutorial-text-area">
+        <div class="tutorial-title" id="tutorialTitle"></div>
+        <div class="tutorial-desc" id="tutorialDesc"></div>
+        <div class="tutorial-desc-small" id="tutorialDescSmall"></div>
+        
+        <!-- ✨ 우하단 페이지 인디케이터 -->
+        <div class="tutorial-page-indicator" id="tutorialPageIndicator"></div>
+      </div>
+
+      <!-- 좌우 네비게이션 -->
+      <div class="tutorial-nav">
+        <button id="btnPrevTutorial">&lt;</button>
+        <button id="btnNextTutorial">&gt;</button>
+      </div>
+    </div>
+  </div>
+      <script>
+    // 기존 인트로 화면 클릭
+    document.getElementById('introScreen').addEventListener('click', () => {
+      document.getElementById('introScreen').classList.add('opened');
+    });
+
+    // 튜토리얼 카드 클릭 (모달 열기)
+    document.getElementById('tutorialCard').addEventListener('click', (e) => {
+      e.stopPropagation();
+      currentTutorialIndex = 0;
+      renderTutorial();
+      document.getElementById('tutorialModal').classList.remove('hidden');
+    });
+
+    // ---------- ✨ 튜토리얼 데이터 및 로직 ----------
+    const tutorials = [
+      {
+        title: "[기본 규칙]",
+        desc: "클릭으로 도형의 Edge에 맞닿게 배치하세요.",
+        small: "배치 가능한 곳에 도형이 달라붙습니다.",
+        img: "tutorial/1.webp"
+      },
+      {
+        title: "[기본 규칙]",
+        desc: "새 도형은 기존 도형의 Edge에 인접하게만 배치할 수 있습니다.",
+        small: "단, 같은 모양끼리는 Edge를 맞닿게 배치할 수 없습니다.",
+        img: "tutorial/2.webp"
+      },
+      {
+        title: "[기본 규칙]",
+        desc: "휠 업/다운으로 줌 인/줌 아웃, 휠 클릭 드래그로 시점 이동이 가능합니다.",
+        small: "",
+        img: "tutorial/3.webp"
+      },
+      {
+        title: "[기본 규칙]",
+        // ✨ desc 안에 span 태그로 감싸고 data-tooltip 속성에 설명을 넣습니다.
+        desc: "배치를 마친 후, <span class=\"highlight-word\" data-tooltip=\"[Convex Hull] 배치된 모든 도형의 바깥쪽을 고무줄로 팽팽하게 감쌌을 때 만들어지는 외곽선입니다. 게임 화면에서는 노란색 점선으로 표시됩니다.\">볼록 껍질</span> 내 <span class=\"highlight-word\" data-tooltip=\"볼록 껍질의 면적 대비, 배치된 도형들이 차지하는 면적의 비율(%)입니다. 100%에 가까울 수록 빈틈 없이 꽉 채운 것입니다.\">도형 밀도</span>가 60% (어려움 80%) 이상이 되면 성공입니다.",
+        small: "",
+        img: "tutorial/4.webp"
+      },
+      {
+        title: "[UI/조작법]",
+        desc: "우상단 UI에서 다음 순서를 미리 확인할 수 있습니다.",
+        small: "",
+        img: "tutorial/5.webp"
+      },
+      {
+        title: "[UI/조작법]",
+        desc: "우클릭으로 도형을 저장할 수 있습니다.",
+        small: "저장한 블록은 해당 턴에 다시 꺼낼 수 없습니다.",
+        img: "tutorial/6.webp"
+      },
+      {
+        title: "[UI/조작법]",
+        desc: "Esc키를 눌러 일시정지 및 메뉴 호출이 가능합니다.",
+        small: "",
+        img: "tutorial/7.webp"
+      },
+      {
+        title: "[어려움 모드]",
+        desc: "100초 내에 모두 배치하여 성공하는 경우에만 랭킹 등록이 가능합니다. (플레이는 계속 할 수 있습니다)",
+        small: "저장/불러오기 기능을 사용하는 경우는 랭킹에서 제외됩니다.<br>도형 밀도와 남은 시간을 기준으로 Top 3까지만 등재됩니다.",
+        img: "tutorial/8.webp"
+      },
+      {
+        title: "[어려움 모드]",
+        desc: "변칙적인 상황이 발생할 수도 있습니다.",
+        small: "",
+        img: "tutorial/9.webp"
+      },
+      {
+        title: "[전략실]",
+        desc: "자유롭게 실험하며 본인만의 최적 배치를 찾아보세요.",
+        small: "",
+        img: "tutorial/10.webp"
+      },
+      {
+        title: "[전략실]",
+        desc: "우클릭으로 배치할 도형을 제한 없이 바꿀 수 있습니다.",
+        small: "",
+        img: "tutorial/11.webp"
+      },
+      {
+        title: "[전략실]",
+        desc: "Shift+클릭으로 배치된 도형을 지울 수 있습니다.",
+        small: "다른 도형들 사이에 있는 도형은 지울 수 없습니다.",
+        img: "tutorial/12.webp"
+      }
+    ];
+
+    let currentTutorialIndex = 0;
+
+    function renderTutorial() {
+    const data = tutorials[currentTutorialIndex];
+    document.getElementById('tutorialImg').src = data.img;
+    document.getElementById('tutorialTitle').textContent = data.title;
+    document.getElementById('tutorialDesc').innerHTML = data.desc;
+    document.getElementById('tutorialDescSmall').innerHTML = data.small;
+
+    // 화살표 활성화/비활성화
+    document.getElementById('btnPrevTutorial').disabled = (currentTutorialIndex === 0);
+    document.getElementById('btnNextTutorial').disabled = (currentTutorialIndex === tutorials.length - 1);
+    
+    // ✨ 페이지 인디케이터 업데이트 (예: 1 / 10)
+    document.getElementById('tutorialPageIndicator').textContent = 
+      `${currentTutorialIndex + 1} / ${tutorials.length}`;
+    }
+
+    // 이전 버튼
+    document.getElementById('btnPrevTutorial').addEventListener('click', () => {
+      if (currentTutorialIndex > 0) {
+        currentTutorialIndex--;
+        renderTutorial();
+      }
+    });
+
+    // 다음 버튼
+    document.getElementById('btnNextTutorial').addEventListener('click', () => {
+      if (currentTutorialIndex < tutorials.length - 1) {
+        currentTutorialIndex++;
+        renderTutorial();
+      }
+    });
+
+    // 닫기 버튼
+    document.getElementById('btnCloseTutorial').addEventListener('click', () => {
+      document.getElementById('tutorialModal').classList.add('hidden');
+    });
+
+    // 키보드 좌우 방향키 지원 (선택 사항)
+    window.addEventListener('keydown', (e) => {
+      if (document.getElementById('tutorialModal').classList.contains('hidden')) return;
+      if (e.key === 'ArrowLeft') document.getElementById('btnPrevTutorial').click();
+      if (e.key === 'ArrowRight') document.getElementById('btnNextTutorial').click();
+      if (e.key === 'Escape') document.getElementById('btnCloseTutorial').click();
+    });
+        // ✨ 커스텀 툴팁 로직
+    document.addEventListener('mouseover', (e) => {
+      if (e.target.classList.contains('highlight-word')) {
+        const tooltipText = e.target.getAttribute('data-tooltip');
+        if (!tooltipText) return;
+
+        const oldTooltip = document.getElementById('custom-tooltip');
+        if (oldTooltip) oldTooltip.remove();
+
+        const tooltip = document.createElement('div');
+        tooltip.id = 'custom-tooltip';
+        tooltip.textContent = tooltipText;
+        document.body.appendChild(tooltip);
+
+        const rect = e.target.getBoundingClientRect();
+        tooltip.style.left = `${rect.left + rect.width / 2}px`;
+        tooltip.style.top = `${rect.top - 10}px`;
+      }
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      if (e.target.classList.contains('highlight-word')) {
+        const tooltip = document.getElementById('custom-tooltip');
+        if (tooltip) tooltip.remove();
+      }
+    });
+  </script>
 </body>
 </html>

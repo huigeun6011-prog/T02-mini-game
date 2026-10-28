@@ -429,3 +429,444 @@ button:disabled { background: #333; color: #777; cursor: not-allowed; }
 body.shift-pressed canvas {
   cursor: crosshair; /* 또는 'not-allowed' 등 상황에 맞게 */
 }
+
+/* 화면 전체 */
+.intro-screen {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.mode-container {
+  position: absolute; /* ✨ 화면 중앙 기준 */
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.5s ease 0.4s, transform 0.5s ease 0.4s;
+  z-index: 20; /* 글자보다 위에 */
+  pointer-events: none; /* 등장 전에는 클릭 방지 */
+}
+
+/* 제목 컨테이너 */
+.title-container {
+  position: absolute;
+  display: flex;
+  font-size: 20vw;
+  font-weight: 900;
+  color: #eee;
+  /* ✨ 가속도를 주기 위해 transition을 title-half로 옮기고, ease-in(가속) 적용 */
+  z-index: 10;
+}
+
+/* 왼쪽/오른쪽 글자 공통 */
+.title-half {
+  transition: transform 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53); /* ease-in (점점 가속) */
+  /* 또는 더 극적인 가속을 원하면 cubic-bezier(0.8, 0, 1, 0) 사용 */
+}
+
+/* 왼쪽 글자 (반전) */
+.title-half.left {
+  transform: scaleX(-1);
+  margin-right: -0.05em;
+}
+
+/* 우측 글자 */
+.title-half.right {
+  transform: scaleX(1);
+}
+
+/* 클릭 시 발동되는 클래스 */
+.intro-screen.opened .title-half.left {
+  /* ✨ 반전된 상태이므로 양수를 주면 왼쪽으로 이동 */
+  transform: scaleX(-1) translateX(100vw);
+  transition: transform 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53);
+}
+.intro-screen.opened .title-half.right {
+  /* ✨ 정상 상태이므로 양수를 주면 오른쪽으로 이동 */
+  transform: scaleX(1) translateX(100vw);
+  transition: transform 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53);
+}
+
+.intro-screen.opened .mode-container {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto; /* 등장 후 클릭 허용 */
+}
+
+/* 튜토리얼 카드 색상 포인트 */
+.mode-tutorial { border-top: 4px solid #d8804a; } /* 주황색 (삼각형) */
+
+/* 튜토리얼 이미지 모달 */
+.tutorial-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; backdrop-filter: blur(4px);
+}
+.tutorial-modal.hidden { display: none; }
+.tutorial-modal img {
+  max-width: 90vw; max-height: 85vh;
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+}
+.tutorial-modal .close-btn {
+  position: absolute; top: 20px; right: 30px;
+  background: transparent; border: none; color: #fff;
+  font-size: 30px; cursor: pointer;
+}
+
+/* ==========================================================
+   시작 페이지 (index.html) 및 튜토리얼 전용 스타일
+   ========================================================== */
+
+/* 시작 페이지 전용 스타일 */
+.start-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #1e1e24;
+  color: #eee;
+}
+.start-title {
+  font-size: 2.5rem;
+  margin-bottom: 40px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+.mode-container {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.mode-card {
+  width: 220px;
+  height: 300px;
+  background: #2a2a34;
+  border: 2px solid #444;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+  color: #eee;
+}
+/* 기본 호버 애니메이션 (움직임만 담당) */
+.mode-card:hover {
+  transform: translateY(-5px);
+}
+
+/* ✨ 모드별 테마 컬러 호버 효과 */
+.mode-tutorial:hover {
+  border-color: #d8804a;
+  box-shadow: 0 8px 20px rgba(216, 128, 74, 0.3);
+}
+
+.mode-easy:hover {
+  border-color: #4a80d8;
+  box-shadow: 0 8px 20px rgba(74, 128, 216, 0.3);
+}
+
+.mode-hard:hover {
+  border-color: #8a4ad8;
+  box-shadow: 0 8px 20px rgba(138, 74, 216, 0.3);
+}
+
+.mode-practice:hover {
+  border-color: #50c8b4;
+  box-shadow: 0 8px 20px rgba(80, 200, 180, 0.3);
+}
+.mode-icon {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mode-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.mode-name {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+.mode-desc {
+  font-size: 0.9rem;
+  color: #aaa;
+  text-align: center;
+  padding: 0 20px;
+  line-height: 1.5;
+}
+
+/* 모드별 색상 포인트 */
+.mode-tutorial { border-top: 4px solid #d8804a; } /* 주황색 (삼각형) */
+.mode-easy { border-top: 4px solid #4a80d8; }     /* 파란색 (사각형) */
+.mode-hard { border-top: 4px solid #8a4ad8; }     /* 보라색 (오각형) */
+.mode-practice { border-top: 4px solid #50c8b4; } /* 청록색 (마름모) */
+
+/* 화면 전체 (인트로) */
+.intro-screen {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* 메뉴 컨테이너 (처음엔 투명) */
+.menu-container {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.5s ease 0.4s, transform 0.5s ease 0.4s; /* 글자가 갈라진 후 등장 */
+  z-index: 20;
+  position: relative;
+}
+
+/* 제목 컨테이너 */
+.title-container {
+  position: absolute;
+  display: flex;
+  font-size: 20vw;
+  font-weight: 900;
+  color: #eee;
+  z-index: 10;
+  transition: visibility 0s 0.6s;
+}
+
+/* 왼쪽/오른쪽 글자 공통 */
+.title-half {
+  transition: transform 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53); /* 가속 */
+}
+
+/* 왼쪽 글자 (반전) */
+.title-half.left {
+  transform: scaleX(-1);
+  margin-right: -0.05em;
+}
+
+/* 우측 글자 */
+.title-half.right {
+  transform: scaleX(1);
+}
+
+/* 클릭 시 발동되는 클래스 */
+.intro-screen.opened .title-container {
+  visibility: hidden;
+}
+.intro-screen.opened .title-half.left {
+  transform: scaleX(-1) translateX(100vw);
+}
+.intro-screen.opened .title-half.right {
+  transform: scaleX(1) translateX(100vw);
+}
+.intro-screen.opened .menu-container {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* ---------- 튜토리얼 모달 ---------- */
+.tutorial-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.tutorial-modal.hidden { display: none; }
+
+.tutorial-box {
+  position: relative;
+  /* ✨ 화면 높이의 85%를 기준으로 16:9 비율을 유지하도록 너비 자동 계산 */
+  height: 85vh;
+  aspect-ratio: 16 / 9; 
+  max-width: 95vw; /* 화면 밖으로 넘치지 않게 제한 */
+  max-height: 90vh;
+  
+  background: #1e1e24; /* 이미지가 꽉 차므로 배경을 어둡게 */
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+  overflow: visible; /* ✨ hidden에서 visible로 변경 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 우상단 닫기 버튼 */
+.tutorial-close {
+  position: absolute; 
+  top: 15px; 
+  right: 15px; /* 박스 안쪽에 위치 */
+  width: 40px; 
+  height: 40px; 
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1); 
+  border: none; 
+  color: #fff;
+  font-size: 24px; 
+  cursor: pointer; 
+  transition: background 0.2s, opacity 0.2s;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  z-index: 10;
+}
+.tutorial-close:hover { 
+  background: rgba(255,255,255,0.3); 
+}
+
+/* 이미지 영역 */
+/* 이미지 영역 (박스 전체를 채움) */
+.tutorial-image-area {
+  width: 100%;
+  height: 100%;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  overflow: hidden; /* ✨ 이미지가 삐져나가지 않게 여기로 이동 */
+  border-radius: 12px; /* ✨ 박스 모서리에 맞춰 둥글게 */
+}
+.tutorial-image-area img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 이미지 비율 유지하며 꽉 채움 */
+}
+
+/* 텍스트 영역 (이미지 위에 띄움 - 하단 그라데이션 배경) */
+/* 텍스트 영역 (이미지 위에 띄움 - 하단 그라데이션 배경) */
+.tutorial-text-area {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 30px 32px 24px 32px;
+  
+  /* ✨ 텍스트 가독성을 위한 어두운 그라데이션 배경 */
+  background: linear-gradient(to top, rgba(20, 20, 25, 0.95) 0%, rgba(20, 20, 25, 0.8) 70%, rgba(20, 20, 25, 0) 100%);
+  
+  display: flex; 
+  flex-direction: column; 
+  justify-content: flex-end; /* 텍스트를 하단에 정렬 */
+  
+  /* ✨ pointer-events: none; 을 삭제하거나 아래처럼 auto로 변경 */
+  pointer-events: auto; 
+}
+.tutorial-title {
+  font-size: 22px; 
+  font-weight: bold; 
+  color: #fff; 
+  margin-bottom: 8px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+.tutorial-desc {
+  font-size: 16px; 
+  color: #eee; 
+  line-height: 1.6;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+.tutorial-desc-small {
+  font-size: 14px; 
+  color: #bbb; 
+  margin-top: 6px; 
+  line-height: 1.5;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+
+/* 페이지 인디케이터 위치 조정 (텍스트 영역 안쪽 우하단) */
+.tutorial-page-indicator {
+  position: absolute;
+  bottom: 24px; 
+  right: 32px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #aaa;
+  z-index: 10;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* 하단 네비게이션 (화살표) */
+.tutorial-nav {
+  position: absolute; 
+  top: 50%; 
+  transform: translateY(-50%);
+  /* ✨ 박스 밖으로 빼기 위해 left, right를 음수로 설정 */
+  left: -80px; 
+  right: -80px; 
+  width: calc(100% + 160px);
+  display: flex; 
+  justify-content: space-between;
+  pointer-events: none;
+}
+.tutorial-nav button {
+  pointer-events: auto;
+  width: 50px; 
+  height: 50px; 
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1); 
+  border: none; 
+  color: #fff;
+  font-size: 24px; 
+  cursor: pointer; 
+  transition: background 0.2s, opacity 0.2s;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+}
+.tutorial-nav button:hover:not(:disabled) { 
+  background: rgba(255,255,255,0.3); 
+}
+.tutorial-nav button:disabled { 
+  opacity: 0; 
+  pointer-events: none; 
+}
+/* ---------- 튜토리얼 단어 강조 및 툴팁 ---------- */
+
+/* 강조할 단어 스타일 */
+.highlight-word {
+  color: #ffd700; /* 노란색 */
+  border-bottom: 1px dashed #ffd700; /* 점선 밑줄 */
+  cursor: help; /* 물음표 커서 */
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.highlight-word:hover {
+  background: rgba(255, 215, 0, 0.15); /* 은은한 배경 강조 */
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6); /* 네온 글로우 효과 */
+}
+
+#custom-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%); /* 글자 중앙 위쪽 정렬 */
+  background: rgba(20, 20, 25, 0.95);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 300px;
+  width: max-content;
+  z-index: 9999; /* ✨ 튜토리얼 모달(1000)보다 훨씬 높게 설정 */
+  pointer-events: none;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  border: 1px solid #444;
+  white-space: pre-wrap; /* 줄바꿈 허용 */
+}
+
+/* 말풍선 꼬리 */
+#custom-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: rgba(20, 20, 25, 0.95) transparent transparent transparent;
+}

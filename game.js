@@ -40,12 +40,9 @@ const queueList = document.getElementById('queue-list');
 const resultBar = document.getElementById('resultBar');
 const resultTitle = document.getElementById('resultTitle');
 const resultDesc = document.getElementById('resultDesc');
-
-const ruleScreen = document.getElementById('ruleScreen');
 const pauseMenu = document.getElementById('pauseMenu');
 const saveMenu = document.getElementById('saveMenu');
 const loadMenu = document.getElementById('loadMenu');
-const rulesAgain = document.getElementById('rulesAgain');
 const saveSlotsEl = document.getElementById('saveSlots');
 const loadSlotsEl = document.getElementById('loadSlots');
 
@@ -901,7 +898,11 @@ function loop() { render(); requestAnimationFrame(loop); }
 // ---------- 화면 전환 및 게임 ----------
 function showOverlay(el) { el.classList.remove('hidden'); }
 function hideOverlay(el) { el.classList.add('hidden'); }
-function hideAllOverlays() { [ruleScreen, pauseMenu, saveMenu, loadMenu, rulesAgain].forEach(hideOverlay); }
+
+// ✨ 수정: 삭제된 요소 제거
+function hideAllOverlays() { 
+  [pauseMenu, saveMenu, loadMenu].forEach(hideOverlay); 
+}
 
 function resetGame() {
   shapes = [];
@@ -1321,10 +1322,7 @@ function canRemoveShape(targetShape) {
 }
 
 // ---------- 이벤트 ----------
-document.getElementById('btnStart').onclick = startGame;
 document.getElementById('btnResume').onclick = () => { gameState = 'playing'; hideAllOverlays(); };
-document.getElementById('btnShowRules').onclick = () => { hideOverlay(pauseMenu); showOverlay(rulesAgain); };
-document.getElementById('btnRulesBack').onclick = () => { hideOverlay(rulesAgain); showOverlay(pauseMenu); };
 document.getElementById('btnSave').onclick = () => {
   if (gameState === 'result' || stateBeforePause === 'result') return;
   renderSlots(saveSlotsEl, 'save');
@@ -1655,8 +1653,8 @@ window.addEventListener('keydown', (e) => {
       if (btnSave) btnSave.disabled = (stateBeforePause === 'result'); 
       
     } else if (gameState === 'paused') {
-      if (!saveMenu.classList.contains('hidden') || !loadMenu.classList.contains('hidden') || !rulesAgain.classList.contains('hidden')) {
-        hideOverlay(saveMenu); hideOverlay(loadMenu); hideOverlay(rulesAgain);
+      if (!saveMenu.classList.contains('hidden') || !loadMenu.classList.contains('hidden')) {
+        hideOverlay(saveMenu); hideOverlay(loadMenu); // ✨ rulesAgain 제거
         showOverlay(pauseMenu);
       } else {
         gameState = stateBeforePause; 
@@ -1684,3 +1682,4 @@ window.addEventListener('resize', resize);
 // ---------- 초기화 ----------
 resize();
 loop();
+startGame(); 
