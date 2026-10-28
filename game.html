@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>도형 배치 게임</title>
+  <!-- ✨ 디지털 폰트 추가 -->
+  <link href="https://cdn.jsdelivr.net/npm/@fontsource/dseg7-classic@5.3.0/700.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="left-ui" class="ui-column">
+  <div id="hud"></div>
+  <!-- ✨ 퀵 재시작 버튼 (좌상단 HUD 아래) -->
+  <button id="btnQuickRestart" title="다시 시작">
+    <!-- ✨ width, height 24 / stroke-width 4 -->
+    <svg viewBox="0 0 40 40" width="20" height="20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M38 7v10h-10"></path>
+      <path d="M34.15 25a15 15 0 1 1-3.53-15.6L38 17"></path>
+    </svg>
+  </button>
+</div>
+<div id="right-ui" class="ui-column">
+  <div id="queue-ui">
+    <div id="queue-area" style="display: flex; gap: 6px; align-items: center;"></div>
+  </div>
+  <div id="slot-ui">
+    <div id="slot-area"></div>
+  </div>
+</div>
+<canvas id="cv"></canvas>
+
+<!-- 결과 바 (하단 고정) -->
+<div id="resultBar">
+  <div class="result-info">
+    <p id="resultTitle" class="result-title"></p>
+    <p id="resultDesc" class="result-desc"></p>
+  </div>
+  <div class="btn-row" style="margin-top:0;">
+    <button id="btnResultRestart">다시 시작</button>
+    <button id="btnResultHome" class="secondary">처음으로</button>
+  </div>
+</div>
+
+<!-- 규칙 화면 -->
+<div id="ruleScreen" class="overlay">
+  <div class="panel">
+    <h2>도형 배치 게임</h2>
+    <p>정삼각형, 정사각형, 정오각형을 무작위 순서로 배치해, 볼록 껍질 대비 채움 비율을 최대화하세요.</p>
+    <ul>
+      <li>도형은 기존 도형의 <b>변에 인접</b>하게만 놓을 수 있습니다.</li>
+      <li><b>같은 도형끼리 변을 맞대면 안 됩니다.</b> (꼭짓점 접촉은 허용)</li>
+      <li>도형 <b>25개</b>를 모두 놓은 뒤, <b>80% 이상</b>이면 성공입니다.</li>
+      <li>조작: 클릭 배치 · 휠클릭 드래그 이동 · 휠 스크롤 줌 · ESC 일시정지</li>
+    </ul>
+    <div class="btn-row">
+      <button id="btnStart">시작</button>
+    </div>
+  </div>
+</div>
+
+<!-- 일시정지 메뉴 -->
+<div id="pauseMenu" class="overlay hidden">
+  <div class="panel">
+    <h2>일시정지</h2>
+    <div class="btn-row">
+      <button id="btnResume">계속하기</button>
+      <button id="btnShowRules" class="secondary">게임 설명</button>
+    </div>
+    <div class="btn-row">
+      <button id="btnSave" class="secondary">저장하기</button>
+      <button id="btnLoad" class="secondary">불러오기</button>
+    </div>
+    <div class="btn-row">
+      <button id="btnRestart" class="danger">처음으로</button>
+    </div>
+  </div>
+</div>
+
+<!-- 저장/불러오기/규칙다시보기 (기존과 동일) -->
+<div id="saveMenu" class="overlay hidden">
+  <div class="panel">
+    <h2>저장 슬롯</h2>
+    <div id="saveSlots" class="slot-list"></div>
+    <div class="btn-row"><button id="btnSaveClose" class="secondary">닫기</button></div>
+  </div>
+</div>
+<div id="loadMenu" class="overlay hidden">
+  <div class="panel">
+    <h2>불러오기</h2>
+    <div id="loadSlots" class="slot-list"></div>
+    <div class="btn-row"><button id="btnLoadClose" class="secondary">닫기</button></div>
+  </div>
+</div>
+<div id="rulesAgain" class="overlay hidden">
+  <div class="panel">
+    <h2>게임 설명</h2>
+    <ul>
+      <li>도형은 기존 도형의 <b>변에 인접</b>하게만 놓을 수 있습니다.</li>
+      <li><b>같은 도형끼리 변을 맞대면 안 됩니다.</b> (꼭짓점 접촉은 허용)</li>
+      <li>도형 <b>20개</b>를 모두 놓은 뒤, 채움 비율 <b>70% 이상</b>이면 성공입니다.</li>
+      <li>조작: 클릭 배치 · 휠클릭 드래그 이동 · 휠 스크롤 줌 · ESC 일시정지</li>
+    </ul>
+    <div class="btn-row"><button id="btnRulesBack" class="secondary">돌아가기</button></div>
+  </div>
+</div>
+<!-- ✨ 우측 랭킹 패널 (결과 화면일 때만 표시) -->
+<div id="rankingPanel" class="ranking-panel hidden">
+  <h3 style="margin: 0 0 10px; text-align: center;">명예의 전당</h3>
+  <div id="rankingList"></div>
+</div>
+
+<!-- 이니셜 입력 오버레이 (중앙) -->
+<div id="initialsMenu" class="overlay hidden">
+  <div class="panel" style="text-align: center;">
+    <h2>랭킹 등록</h2>
+    <p>축하합니다! 랭킹 Top 3에 진입했습니다.</p>
+    <div style="margin: 20px 0;">
+      <input type="text" id="initialsInput" maxlength="3" placeholder="AAA" 
+            style="background: #333; color: #fff; border: 2px solid #555; border-radius: 6px; padding: 10px; font-size: 24px; text-align: center; width: 120px; text-transform: uppercase;">
+      <p style="font-size: 12px; color: #aaa; margin-top: 8px;">영문 및 숫자 3글자를 입력하세요.</p>
+    </div>
+    <div class="btn-row" style="justify-content: center;">
+      <button id="btnSubmitRanking">확인</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="game.js"></script>
+</body>
+</html>
