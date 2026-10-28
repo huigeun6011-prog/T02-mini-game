@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>도형 배치 게임 - 쉬움</title>
+  <title>ǝɓpƎ-to-Edge</title>
   <!-- ✨ 디지털 폰트 추가 -->
   <link href="https://cdn.jsdelivr.net/npm/@fontsource/dseg7-classic@5.3.0/700.min.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -91,6 +91,16 @@
     </div>
     <div class="btn-row" style="justify-content: center;">
       <button id="btnSubmitRanking">확인</button>
+    </div>
+  </div>
+</div>
+<!-- ✨ 커스텀 alert/confirm 모달 -->
+<div id="customAlertModal" class="overlay hidden" style="z-index: 9999;">
+  <div class="panel" style="max-width: 360px; text-align: center;">
+    <h2 id="customAlertTitle" style="margin-bottom: 12px;">알림</h2>
+    <p id="customAlertMessage" style="margin-bottom: 24px; white-space: pre-line;"></p>
+    <div class="btn-row" id="customAlertButtons" style="justify-content: center;">
+      <!-- 버튼이 동적으로 삽입됩니다 -->
     </div>
   </div>
 </div>

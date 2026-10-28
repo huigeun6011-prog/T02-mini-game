@@ -133,6 +133,64 @@ document.fonts.load('bold 80px "DSEG7 Classic"').then(() => {
   isFontLoaded = true;
 });
 
+// ---------- 커스텀 모달 유틸 ----------
+function showCustomAlert(message, title = '알림') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('customAlertModal');
+    const titleEl = document.getElementById('customAlertTitle');
+    const msgEl = document.getElementById('customAlertMessage');
+    const btnContainer = document.getElementById('customAlertButtons');
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    btnContainer.innerHTML = '';
+
+    const btnOk = document.createElement('button');
+    btnOk.textContent = '확인';
+    btnOk.className = 'btn-confirm';
+    btnOk.onclick = () => {
+      modal.classList.add('hidden');
+      resolve();
+    };
+    btnContainer.appendChild(btnOk);
+
+    modal.classList.remove('hidden');
+  });
+}
+
+function showCustomConfirm(message, title = '확인') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('customAlertModal');
+    const titleEl = document.getElementById('customAlertTitle');
+    const msgEl = document.getElementById('customAlertMessage');
+    const btnContainer = document.getElementById('customAlertButtons');
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    btnContainer.innerHTML = '';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = '취소';
+    btnCancel.className = 'btn-cancel';
+    btnCancel.onclick = () => {
+      modal.classList.add('hidden');
+      resolve(false);
+    };
+    btnContainer.appendChild(btnCancel);
+
+    const btnOk = document.createElement('button');
+    btnOk.textContent = '확인';
+    btnOk.className = 'btn-confirm';
+    btnOk.onclick = () => {
+      modal.classList.add('hidden');
+      resolve(true);
+    };
+    btnContainer.appendChild(btnOk);
+
+    modal.classList.remove('hidden');
+  });
+}
+
 // ---------- 유틸 ----------
 function rotPoint(p, ang) {
   const c = Math.cos(ang), s = Math.sin(ang);
@@ -1006,18 +1064,29 @@ function checkResult() {
   resultTitle.className = 'result-title ' + (success ? 'success' : 'fail');
   
   const compareSymbol = success ? '≥' : '<';
-  resultDesc.textContent = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
+  let descText = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
+  
+  // ✨ 랭킹 등재 불가 사유 표시 (시간 초과 OR 저장/불러오기 강제 터짐)
+  if (HAS_RANKING && success && isTimeOver) {
+    descText += ' (시간 초과 · 랭킹 등록 불가)';
+  }
+  
+  resultDesc.textContent = descText;
+
+  resultDesc.textContent = descText;
   
   hideAllOverlays();
   resultBar.classList.add('show');
   
+  // ✨ 수정된 부분: 어려움 모드라면 결과(성공/실패/시간초과)와 무관하게 랭킹 패널 표시
   if (HAS_RANKING) {
+    updateRankingPanel(); // 랭킹 패널 렌더링 및 표시
+
+    // (선택) 100초 내에 성공했을 때만 랭킹 등록 창을 띄우는 로직은 유지
     const elapsed = HAS_TIMER ? (performance.now() - startTime) / 1000 : 0;
     finalRemainingTime = HAS_TIMER ? Math.max(0, TIME_LIMIT - elapsed) : 0;
     if (isTimeOver) finalRemainingTime = 0;
 
-    updateRankingPanel();
-    
     const currentRankings = getRankings();
     const isRankable = success && !isTimeOver && (
       currentRankings.length < MAX_RANKING || 
@@ -1059,10 +1128,10 @@ function serializeState() {
   };
 }
 
-function saveToSlot(i) {
-  if (!confirm('저장하시겠습니까?\n(주의: 저장/불러오기를 하면 랭킹 등록이 불가능해집니다.)')) {
-    return false;
-  }
+async function saveToSlot(i) {
+  const isConfirmed = await showCustomConfirm('저장하시겠습니까?\n(주의: 저장을 하면 타이머가 강제 종료되며,\n랭킹 등록이 불가능해집니다.)', '저장');
+  if (!isConfirmed) return false;
+  
   try {
     if (HAS_TIMER) isTimeOver = true;
     localStorage.setItem(SAVE_PREFIX + i, JSON.stringify(serializeState()));
@@ -1070,7 +1139,7 @@ function saveToSlot(i) {
   } catch (e) { return false; }
 }
 
-function loadFromSlot(i) {
+async function loadFromSlot(i) {
   try {
     const raw = localStorage.getItem(SAVE_PREFIX + i);
     if (!raw) return false;
@@ -1078,7 +1147,7 @@ function loadFromSlot(i) {
     if (!data || data.version !== 4 || !Array.isArray(data.shapes)) return false;
     
     if (data.mode !== currentMode) {
-      alert('다른 난이도의 저장 데이터는 불러올 수 없습니다.');
+      await showCustomAlert('다른 난이도의 저장 데이터는 불러올 수 없습니다.', '불러오기 실패');
       return false;
     }
 
@@ -1136,12 +1205,14 @@ function deleteSlot(i) {
 }
 
 function renderSlots(container, mode) {
-  container.innerHTML = '';
+  container.innerHTML = ''; // 슬롯 영역 초기화
+  
   for (let i = 0; i < SAVE_SLOTS; i++) {
     const info = slotInfo(i);
     const row = document.createElement('div');
     row.className = 'slot-item';
     
+    // 시간 포맷
     let timeStr = '';
     if (info && info.savedAt) {
       timeStr = new Date(info.savedAt).toLocaleString('ko-KR', {
@@ -1150,6 +1221,7 @@ function renderSlots(container, mode) {
       });
     }
 
+    // 난이도 텍스트
     let modeStr = '';
     if (info && info.mode === 'easy') modeStr = '[쉬움] ';
     else if (info && info.mode === 'hard') modeStr = '[어려움] ';
@@ -1162,44 +1234,58 @@ function renderSlots(container, mode) {
     btnGroup.style.display = 'flex';
     btnGroup.style.gap = '6px';
 
-    const btn = document.createElement('button');
     if (mode === 'save') {
-      btn.textContent = '저장';
-      btn.onclick = () => {
+      // 저장 버튼
+      const btnSave = document.createElement('button');
+      btnSave.textContent = '저장';
+      btnSave.onclick = async () => {
         if (info) { 
-          if (!confirm(`슬롯 ${i + 1}에 이미 데이터가 있습니다. 덮어쓰시겠습니까?`)) return;
+          const isOverwrite = await showCustomConfirm(`슬롯 ${i + 1}에 이미 데이터가 있습니다. 덮어쓰시겠습니까?`, '덮어쓰기');
+          if (!isOverwrite) return;
         }
-        if (saveToSlot(i)) renderSlots(container, 'save'); 
-        else alert('저장 실패'); 
+        if (await saveToSlot(i)) renderSlots(container, 'save'); 
+        else showCustomAlert('저장 실패', '오류'); 
       };
-      btnGroup.appendChild(btn);
+      btnGroup.appendChild(btnSave);
 
+      // 삭제 버튼
       const btnDel = document.createElement('button');
       btnDel.textContent = '삭제';
       btnDel.className = 'danger';
       btnDel.disabled = !info;
-      btnDel.onclick = () => {
-        if (confirm(`슬롯 ${i + 1}의 데이터를 정말 삭제하시겠습니까?`)) {
+      btnDel.onclick = async () => {
+        const isDelete = await showCustomConfirm(`슬롯 ${i + 1}의 데이터를 정말 삭제하시겠습니까?`, '삭제');
+        if (isDelete) {
           if (deleteSlot(i)) renderSlots(container, 'save');
-          else alert('삭제 실패');
+          else showCustomAlert('삭제 실패', '오류');
         }
       };
       btnGroup.appendChild(btnDel);
 
     } else {
-      btn.textContent = '불러오기';
-      btn.disabled = !info;
-      btn.onclick = () => { if (!loadFromSlot(i)) alert('불러오기 실패'); };
-      btnGroup.appendChild(btn);
+      // 불러오기 버튼
+      const btnLoad = document.createElement('button');
+      btnLoad.textContent = '불러오기';
+      btnLoad.disabled = !info;
+      btnLoad.onclick = async () => { 
+        // ✨ 불러오기 확인창 추가
+        const isConfirmed = await showCustomConfirm('불러오시겠습니까?\n(주의: 불러오기를 하면 타이머가 강제 종료되며,\n랭킹 등록이 불가능해집니다.)', '불러오기');
+        if (!isConfirmed) return;
 
+        if (!await loadFromSlot(i)) showCustomAlert('불러오기 실패', '오류'); 
+      };
+      btnGroup.appendChild(btnLoad);
+
+      // 삭제 버튼
       const btnDel = document.createElement('button');
       btnDel.textContent = '삭제';
       btnDel.className = 'danger';
       btnDel.disabled = !info;
-      btnDel.onclick = () => {
-        if (confirm(`슬롯 ${i + 1}의 데이터를 정말 삭제하시겠습니까?`)) {
+      btnDel.onclick = async () => {
+        const isDelete = await showCustomConfirm(`슬롯 ${i + 1}의 데이터를 정말 삭제하시겠습니까?`, '삭제');
+        if (isDelete) {
           if (deleteSlot(i)) renderSlots(container, 'load');
-          else alert('삭제 실패');
+          else showCustomAlert('삭제 실패', '오류');
         }
       };
       btnGroup.appendChild(btnDel);
@@ -1329,19 +1415,26 @@ document.getElementById('btnSave').onclick = () => {
   hideOverlay(pauseMenu);
   showOverlay(saveMenu);
 };
-document.getElementById('btnLoad').onclick = () => { renderSlots(loadSlotsEl, 'load'); hideOverlay(pauseMenu); showOverlay(loadMenu); };
+document.getElementById('btnLoad').onclick = () => {
+  renderSlots(loadSlotsEl, 'load');
+  hideOverlay(pauseMenu);
+  showOverlay(loadMenu);
+};
 document.getElementById('btnSaveClose').onclick = () => { hideOverlay(saveMenu); showOverlay(pauseMenu); };
 document.getElementById('btnLoadClose').onclick = () => { hideOverlay(loadMenu); showOverlay(pauseMenu); };
-document.getElementById('btnRestart').onclick = () => { if (confirm('처음으로 돌아갑니다. 저장하지 않은 진행은 사라집니다.')) goHome(); };
+document.getElementById('btnRestart').onclick = async () => {
+  const isHome = await showCustomConfirm('처음으로 돌아갑니다. 저장하지 않은 진행은 사라집니다.', '처음으로');
+  if (isHome) goHome();
+};
 document.getElementById('btnResultRestart').onclick = startGame;
 document.getElementById('btnResultHome').onclick = goHome;
 
-document.getElementById('btnSubmitRanking').onclick = () => {
+document.getElementById('btnSubmitRanking').onclick = async () => {
   const input = document.getElementById('initialsInput');
   let initials = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   
   if (initials.length !== 3) {
-    alert('이름은 영문 및 숫자 3글자로 정확히 입력해야 합니다.');
+    await showCustomAlert('이름은 영문 및 숫자 3글자로 정확히 입력해야 합니다.', '입력 오류');
     input.focus();
     return; 
   }
@@ -1359,9 +1452,10 @@ document.getElementById('initialsInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btnSubmitRanking').click();
 });
 
-document.getElementById('btnQuickRestart').onclick = () => {
+document.getElementById('btnQuickRestart').onclick = async () => {
   if (gameState === 'playing' || gameState === 'result') {
-    if (confirm('게임을 다시 시작하시겠습니까?\n현재 진행 상황은 저장되지 않습니다.')) startGame();
+    const isRestart = await showCustomConfirm('게임을 다시 시작하시겠습니까?\n현재 진행 상황은 저장되지 않습니다.', '다시 시작');
+    if (isRestart) startGame();
   }
 };
 

@@ -870,3 +870,26 @@ body.shift-pressed canvas {
   border-style: solid;
   border-color: rgba(20, 20, 25, 0.95) transparent transparent transparent;
 }
+/* 커스텀 모달 버튼 영역 */
+#customAlertButtons button {
+  min-width: 80px;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+/* 확인 버튼 (기본 파란색) */
+#customAlertButtons .btn-confirm {
+  background: #3a6ec0;
+}
+#customAlertButtons .btn-confirm:hover {
+  background: #4a80d8;
+}
+
+/* 취소 버튼 (회색) */
+#customAlertButtons .btn-cancel {
+  background: #444;
+}
+#customAlertButtons .btn-cancel:hover {
+  background: #555;
+}
