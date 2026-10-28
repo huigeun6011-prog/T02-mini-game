@@ -33,6 +33,8 @@ const EPS = 1e-9;
 const SNAP_DIST = 30;
 const SAVE_PREFIX = 'shapeGame_save_';
 const SAVE_SLOTS = 3;
+const RANKING_KEY = 'shapeGame_ranking';
+const MAX_RANKING = 3;
 
 // ---------- DOM ----------
 const canvas = document.getElementById('cv');
@@ -80,6 +82,8 @@ let timerExplosionStart = 0; // ✨ 타이머 터짐 애니메이션 시작 시�
 let timerParticles = []; // ✨ 파편(파티클) 배열 추가
 let isFontLoaded = false;
 let finalRemainingTime = 0; // ✨ 전역 변수 추가 (상태 변수 근처)
+let stateBeforePause = 'playing'; // ✨ 일시정지 전 상태 저장용 변수
+let pendingRankData = null; // ✨ 랭킹 등록 대기 데이터
 
 // ✨ DSEG 폰트 로딩 대기 (게임 시작 전에 실행)
 document.fonts.load('bold 80px "DSEG7 Classic"').then(() => {
@@ -838,6 +842,9 @@ function resetGame() {
   replacedBundleIndex = -1;
   replacedShapeIndex = -1;
 
+  const btnSave = document.getElementById('btnSave');
+  if (btnSave) btnSave.disabled = false;
+
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
   const w = screenToWorld(cx, cy);
@@ -856,6 +863,7 @@ function resetGame() {
   }
   
   updateQueueUI();
+  document.getElementById('rankingPanel').classList.add('hidden'); // ✨ 숨기기
 }
 
 function startGame() {
@@ -872,35 +880,78 @@ function goHome() {
   resultBar.classList.remove('show');
   hideAllOverlays();
   showOverlay(ruleScreen);
+  document.getElementById('rankingPanel').classList.add('hidden'); // ✨ 숨기기
+}
+
+function showRankingOverlay(canInput) {
+  const initialsMenu = document.getElementById('initialsMenu');
+  const inputGroup = document.getElementById('initialsInputGroup');
+  const title = document.getElementById('initialsTitle');
+  const desc = document.getElementById('initialsDesc');
+  const rankingList = document.getElementById('rankingList');
+
+  // 랭킹 목록 렌더링
+  const rankings = getRankings();
+  rankingList.innerHTML = rankings.map((r, i) => 
+    `<div style="display:flex; justify-content:space-between; padding: 4px 0; border-bottom: 1px solid #444;">
+      <span>${i + 1}. <b>${r.initials || '???'}</b></span>
+      <span>${r.pct.toFixed(2)}% | ${r.time}초</span>
+    </div>`
+  ).join('') || '<div style="text-align:center; color:#aaa;">아직 기록이 없습니다.</div>';
+
+  if (canInput) {
+    title.textContent = '랭킹 등록';
+    desc.textContent = '축하합니다! 랭킹 Top 3에 진입했습니다. 이니셜을 입력하세요.';
+    inputGroup.style.display = 'block';
+    document.getElementById('initialsInput').value = '';
+    document.getElementById('initialsInput').focus();
+  } else {
+    title.textContent = '명예의 전당';
+    desc.textContent = '아쉽게도 랭킹 Top 3에는 들지 못했습니다.';
+    inputGroup.style.display = 'none';
+  }
+
+  hideAllOverlays();
+  initialsMenu.classList.remove('hidden');
 }
 
 function checkResult() {
   const rawPct = computeFillPercent();
   const truncatedPct = Math.floor(rawPct * 100) / 100; 
   const success = truncatedPct >= TARGET_PCT;
-
-  // ✨ 게임 종료 시점의 남은 시간 저장
-  finalRemainingTime = Math.max(0, TIME_LIMIT - (performance.now() - startTime) / 1000);
   
-  // 만약 시간 초과(0초) 상태라면 0으로 저장
+  const elapsed = (performance.now() - startTime) / 1000;
+  finalRemainingTime = Math.max(0, TIME_LIMIT - elapsed);
   if (isTimeOver) finalRemainingTime = 0;
 
   gameState = 'result';
-  
   resultTitle.textContent = success ? '성공!' : '실패';
   resultTitle.className = 'result-title ' + (success ? 'success' : 'fail');
   
   const compareSymbol = success ? '≥' : '<';
-  let descText = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
+  resultDesc.textContent = `${truncatedPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%`;
   
-  // ✨ 시간 초과(또는 저장/불러오기) 시 랭킹 등록 불가 메시지 추가
-  if (isTimeOver) {
-    descText += ' (시간 초과 또는 저장/불러오기로 인해 랭킹 등록 불가)';
-  }
-  
-  resultDesc.textContent = descText;
   hideAllOverlays();
   resultBar.classList.add('show');
+  
+  // ✨ 우측 랭킹 패널 표시
+  updateRankingPanel();
+  
+  const btnSave = document.getElementById('btnSave');
+  if (btnSave) btnSave.disabled = true;
+
+  // ✨ 랭킹 등록 자격 확인 및 입력창 띄우기
+  const currentRankings = getRankings();
+  const isRankable = success && !isTimeOver && (
+    currentRankings.length < MAX_RANKING || 
+    truncatedPct > currentRankings[currentRankings.length - 1].pct ||
+    (truncatedPct === currentRankings[currentRankings.length - 1].pct && Math.floor(finalRemainingTime) > currentRankings[currentRankings.length - 1].time)
+  );
+
+  if (isRankable) {
+    pendingRankData = { pct: truncatedPct, time: Math.floor(finalRemainingTime) };
+    showInitialsInput(); // 중앙 입력창 띄우기
+  }
 }
 
 // ---------- 저장/불러오기 ----------
@@ -1057,18 +1108,93 @@ function renderSlots(container, mode) {
   }
 }
 
+function getRankings() {
+  try {
+    const raw = localStorage.getItem(RANKING_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function saveRanking(pct, time, initials) {
+  try {
+    let rankings = getRankings();
+    const newRecord = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+      initials: initials, // ✨ 이니셜 저장
+      pct: pct,
+      time: time,
+      date: new Date().toISOString()
+    };
+    rankings.push(newRecord);
+    
+    rankings.sort((a, b) => b.pct - a.pct || b.time - a.time);
+    rankings = rankings.slice(0, MAX_RANKING);
+    
+    localStorage.setItem(RANKING_KEY, JSON.stringify(rankings));
+    return rankings;
+  } catch (e) {
+    console.error('랭킹 저장 실패:', e);
+    return [];
+  }
+}
+
+// ✨ 우측 랭킹 패널 갱신
+function updateRankingPanel() {
+  const panel = document.getElementById('rankingPanel');
+  const list = document.getElementById('rankingList');
+  
+  const rankings = getRankings();
+  list.innerHTML = rankings.map((r, i) => 
+    `<div>
+      <span>${i + 1}. <b>${r.initials || '???'}</b></span>
+      <span>${r.pct.toFixed(2)}% | ${r.time}초</span>
+    </div>`
+  ).join('') || '<div style="text-align:center; color:#aaa; padding:10px 0;">기록 없음</div>';
+  
+  panel.classList.remove('hidden');
+}
+
+// ✨ 이니셜 입력창 띄우기 (중앙)
+function showInitialsInput() {
+  hideAllOverlays();
+  document.getElementById('initialsMenu').classList.remove('hidden');
+  document.getElementById('initialsInput').value = '';
+  document.getElementById('initialsInput').focus();
+}
+
 // ---------- 이벤트 ----------
 document.getElementById('btnStart').onclick = startGame;
 document.getElementById('btnResume').onclick = () => { gameState = 'playing'; hideAllOverlays(); };
 document.getElementById('btnShowRules').onclick = () => { hideOverlay(pauseMenu); showOverlay(rulesAgain); };
 document.getElementById('btnRulesBack').onclick = () => { hideOverlay(rulesAgain); showOverlay(pauseMenu); };
-document.getElementById('btnSave').onclick = () => { renderSlots(saveSlotsEl, 'save'); hideOverlay(pauseMenu); showOverlay(saveMenu); };
+document.getElementById('btnSave').onclick = () => {
+  if (gameState === 'result' || stateBeforePause === 'result') {
+    return;
+  }
+  renderSlots(saveSlotsEl, 'save');
+  hideOverlay(pauseMenu);
+  showOverlay(saveMenu);
+};
 document.getElementById('btnLoad').onclick = () => { renderSlots(loadSlotsEl, 'load'); hideOverlay(pauseMenu); showOverlay(loadMenu); };
 document.getElementById('btnSaveClose').onclick = () => { hideOverlay(saveMenu); showOverlay(pauseMenu); };
 document.getElementById('btnLoadClose').onclick = () => { hideOverlay(loadMenu); showOverlay(pauseMenu); };
 document.getElementById('btnRestart').onclick = () => { if (confirm('처음으로 돌아갑니다. 저장하지 않은 진행은 사라집니다.')) goHome(); };
 document.getElementById('btnResultRestart').onclick = startGame;
 document.getElementById('btnResultHome').onclick = goHome;
+
+document.getElementById('btnSubmitRanking').onclick = () => {
+  const input = document.getElementById('initialsInput');
+  let initials = input.value.trim().toUpperCase();
+  initials = initials.replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'A');
+  
+  if (pendingRankData) {
+    saveRanking(pendingRankData.pct, pendingRankData.time, initials);
+    pendingRankData = null;
+  }
+  
+  hideOverlay(document.getElementById('initialsMenu')); // 입력창 닫기
+  updateRankingPanel(); // ✨ 우측 랭킹 패널 갱신
+};
 
 canvas.addEventListener('mousemove', (e) => {
   if (gameState !== 'playing' && gameState !== 'result') return;
@@ -1288,20 +1414,31 @@ canvas.addEventListener('contextmenu', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (gameState === 'playing') {
+    if (gameState === 'playing' || gameState === 'result') {
+      // ✨ 일시정지 진입
+      stateBeforePause = gameState; // 이전 상태 기억
       gameState = 'paused';
-      // ✨ 일시정지 시점 기록
       pausedTime = performance.now(); 
       showOverlay(pauseMenu);
+      
+      // ✨ 일시정지 시 저장 버튼 비활성화
+      const btnSave = document.getElementById('btnSave');
+      if (btnSave) btnSave.disabled = true; 
+      
     } else if (gameState === 'paused') {
       if (!saveMenu.classList.contains('hidden') || !loadMenu.classList.contains('hidden') || !rulesAgain.classList.contains('hidden')) {
+        // 하위 메뉴가 열려있으면 그것들만 닫음
         hideOverlay(saveMenu); hideOverlay(loadMenu); hideOverlay(rulesAgain);
         showOverlay(pauseMenu);
       } else {
-        gameState = 'playing';
-        // ✨ 재개 시 일시정지 동안 흐른 시간만큼 startTime을 뒤로 미룸
+        // ✨ 일시정지 해제 (재개)
+        gameState = stateBeforePause; // 이전 상태(result 또는 playing)로 복원
         startTime += (performance.now() - pausedTime); 
         hideAllOverlays();
+        
+        // ✨ 다시 플레이 중일 때만 저장 버튼 활성화 (결과 화면이면 비활성 유지)
+        const btnSave = document.getElementById('btnSave');
+        if (btnSave) btnSave.disabled = (gameState === 'result');
       }
     }
   }

@@ -91,6 +91,26 @@
     <div class="btn-row"><button id="btnRulesBack" class="secondary">돌아가기</button></div>
   </div>
 </div>
+<!-- ✨ 우측 랭킹 패널 (결과 화면일 때만 표시) -->
+<div id="rankingPanel" class="ranking-panel hidden">
+  <h3 style="margin: 0 0 10px; text-align: center;">명예의 전당</h3>
+  <div id="rankingList"></div>
+</div>
+
+<!-- 이니셜 입력 오버레이 (중앙) -->
+<div id="initialsMenu" class="overlay hidden">
+  <div class="panel" style="text-align: center;">
+    <h2>랭킹 등록</h2>
+    <p>축하합니다! 랭킹 Top 3에 진입했습니다.</p>
+    <div style="margin: 20px 0;">
+      <input type="text" id="initialsInput" maxlength="3" placeholder="AAA" 
+             style="background: #333; color: #fff; border: 2px solid #555; border-radius: 6px; padding: 10px; font-size: 24px; text-align: center; width: 100px; text-transform: uppercase;">
+    </div>
+    <div class="btn-row" style="justify-content: center;">
+      <button id="btnSubmitRanking">확인</button>
+    </div>
+  </div>
+</div>
 <script type="module" src="game.js"></script>
 </body>
 </html>
