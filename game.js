@@ -29,8 +29,6 @@ const RHOMBUS_AREA = TRI_AREA * 2;
 
 const EPS = 1e-9;
 const SNAP_DIST = 30;
-const SAVE_PREFIX = 'shapeGame_save_';
-const SAVE_SLOTS = 3;
 const RANKING_KEY = 'shapeGame_ranking';
 const MAX_RANKING = 3;
 
@@ -59,20 +57,34 @@ const modeConfig = {
   hard: {
     totalShapes: 25,
     targetPct: 80,
-    hasTimer: true,      // ✨ 타이머 사용
-    hasRanking: true,    // ✨ 랭킹 사용
+    hasTimer: true,
+    hasRanking: true,
+    hasSave: true,
     timeLimit: 100,
     shapes: ['square', 'tri', 'pent', 'rhombus']
   },
   easy: {
     totalShapes: 10,
     targetPct: 60,
-    hasTimer: false,     // ✨ 타이머 미사용
-    hasRanking: false,   // ✨ 랭킹 미사용
-    timeLimit: 0,        // 사용하지 않음
+    hasTimer: false,
+    hasRanking: false,
+    hasSave: true,
+    timeLimit: 0,
     shapes: ['square', 'tri']
+  },
+  practice: {
+    totalShapes: Infinity, // 무한
+    targetPct: 0,
+    hasTimer: false,
+    hasRanking: false,
+    hasSave: false,
+    timeLimit: 0,
+    shapes: ['square', 'tri', 'pent', 'rhombus']
   }
 };
+
+const SAVE_PREFIX = `shapeGame_save_${currentMode}_`;
+const SAVE_SLOTS = 3;
 
 const config = modeConfig[currentMode];
 const TOTAL_SHAPES = config.totalShapes;
@@ -99,26 +111,29 @@ let errorMsgTimer = null;
 let tooltipX = 0;
 let tooltipY = 0;
 let tooltipStartTime = 0;
-let currentBundleIndex = 0; // 현재 진행 중인 묶음 인덱스
-let currentShapeIndex = 0;  // 현재 묶음 내에서 꺼낼 도형 인덱스
-let replacedBundleIndex = -1; // 교체가 일어난 묶음 번호 (재교체 방지용)
-let replacedShapeIndex = -1;  // 교체가 일어난 묶음 내 위치 (재교체 방지용)
-let startTime = 0;           // 게임 시작 시간 (performance.now() 기준)
-let isTimeOver = false;      // 시간 초과 여부
-let pausedTime = 0;          // 일시정지된 시간 누적
-let timerExplosionStart = 0; // ✨ 타이머 터짐 애니메이션 시작 시간
-let timerParticles = []; // ✨ 파편(파티클) 배열 추가
+let currentBundleIndex = 0;
+let currentShapeIndex = 0;
+let replacedBundleIndex = -1;
+let replacedShapeIndex = -1;
+let startTime = 0;
+let isTimeOver = false;
+let pausedTime = 0;
+let timerExplosionStart = 0;
+let timerParticles = [];
 let isFontLoaded = false;
-let finalRemainingTime = 0; // ✨ 전역 변수 추가 (상태 변수 근처)
-let stateBeforePause = 'playing'; // ✨ 일시정지 전 상태 저장용 변수
-let pendingRankData = null; // ✨ 랭킹 등록 대기 데이터
+let finalRemainingTime = 0;
+let stateBeforePause = 'playing';
+let pendingRankData = null;
 
-// ✨ DSEG 폰트 로딩 대기 (게임 시작 전에 실행)
+let hoveredShape = null;
+let isShiftPressed = false;
+
+// 폰트 로딩 대기
 document.fonts.load('bold 80px "DSEG7 Classic"').then(() => {
   isFontLoaded = true;
 }).catch(() => {
   console.warn('DSEG 폰트 로딩 실패, 기본 폰트 사용');
-  isFontLoaded = true; // 실패해도 게임은 진행되도록
+  isFontLoaded = true;
 });
 
 // ---------- 유틸 ----------
@@ -156,20 +171,35 @@ function closestPointOnSegment(p, a, b) {
   return { x: a.x + abx * t, y: a.y + aby * t };
 }
 
+// 점이 다각형 내부에 있는지 판별
+function isPointInPolygon(p, verts) {
+  let inside = false;
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const xi = verts[i].x, yi = verts[i].y;
+    const xj = verts[j].x, yj = verts[j].y;
+    const intersect = ((yi > p.y) !== (yj > p.y)) &&
+      (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 // ---------- 큐 생성 ----------
-function buildQueue() {
+function buildQueue() { 
+  if (currentMode === 'practice') {
+    return [];
+  }
+
   let sets = [];
-  
+
   if (currentMode === 'easy') {
-    // ✨ 쉬움 모드: [삼각형, 사각형] 번들을 5개 생성 (순서 고정)
     for (let i = 0; i < 5; i++) {
       sets.push(['tri', 'square']);
     }
-    // ✨ 쉬움 모드는 섞지 않고 그대로 반환
     return sets; 
   } 
   
-  // --- 어려움(하드) 모드 로직 ---
+  // 어려움(하드) 모드
   for (let i = 0; i < 7; i++) {
     sets.push(['square', 'tri', 'pent']);
   }
@@ -184,7 +214,6 @@ function buildQueue() {
   triBundle.isSpecial = true; 
   sets.splice(triSetIndex, 0, triBundle);
 
-  // 하드 모드는 내부 도형 섞기
   return sets.map(set => {
     const shuffled = [...set].sort(() => Math.random() - 0.5);
     if (set.isSpecial) shuffled.isSpecial = true;
@@ -192,20 +221,23 @@ function buildQueue() {
   });
 }
 
+let practiceCurrentType = 'tri';
+
 function getNextType() {
-  // 큐의 현재 인덱스가 범위를 벗어났고, 슬롯에 도형이 있다면 슬롯을 큐로 이동
-  // (이때가 "마지막 도형을 다 써서 슬롯의 도형을 들어야 하는 시점"임)
+  if (currentMode === 'practice') {
+    return practiceCurrentType;
+  }
+  
   if (currentBundleIndex >= shapeQueue.length) {
     if (savedType) {
       shapeQueue.push([savedType]);
       savedType = null;
-      updateQueueUI(); // 슬롯이 비워졌으므로 UI 갱신
+      updateQueueUI();
     } else {
       return null;
     }
   }
   
-  // 현재 큐의 도형 반환
   if (shapeQueue.length > currentBundleIndex && 
       shapeQueue[currentBundleIndex].length > currentShapeIndex) {
     return shapeQueue[currentBundleIndex][currentShapeIndex];
@@ -213,7 +245,7 @@ function getNextType() {
   return null;
 }
 
-// ---------- 순수 수학: 다각형 교차 넓이 계산 (Sutherland-Hodgman) ----------
+// ---------- 순수 수학 ----------
 function getLineIntersection(p1, p2, p3, p4) {
   const a1 = p2.y - p1.y, b1 = p1.x - p2.x, c1 = a1 * p1.x + b1 * p1.y;
   const a2 = p4.y - p3.y, b2 = p3.x - p4.x, c2 = a2 * p3.x + b2 * p3.y;
@@ -223,7 +255,6 @@ function getLineIntersection(p1, p2, p3, p4) {
 }
 
 function clipPolygon(subjectPoly, clipPoly) {
-  // ✨ 자르는 도형(clipPoly)의 방향을 미리 계산
   const isCCW = getSignedArea(clipPoly) > 0;
   let outputList = subjectPoly;
 
@@ -236,11 +267,9 @@ function clipPolygon(subjectPoly, clipPoly) {
 
     let s = inputList[inputList.length - 1];
     for (const e of inputList) {
-      // ✨ 외적 결과에 방향을 곱해서 "무조건 안쪽"을 판별
       const crossE = (cp2.x - cp1.x) * (e.y - cp1.y) - (cp2.y - cp1.y) * (e.x - cp1.x);
       const crossS = (cp2.x - cp1.x) * (s.y - cp1.y) - (cp2.y - cp1.y) * (s.x - cp1.x);
       
-      // 도형이 시계방향이면 부호를 반대로!
       const eInside = isCCW ? (crossE >= -1e-9) : (crossE <= 1e-9);
       const sInside = isCCW ? (crossS >= -1e-9) : (crossS <= 1e-9);
 
@@ -270,10 +299,8 @@ function getSignedArea(verts) {
 }
 
 function getOverlapArea(vertsA, vertsB) {
-  // ✨ 방향 판정 및 reverse() 로직을 완전히 삭제!
   const clipped = clipPolygon(vertsA, vertsB);
   if (!clipped || clipped.length < 3) return 0;
-  
   return Math.abs(polygonArea(clipped.map(p => [p.x, p.y])));
 }
 
@@ -311,11 +338,26 @@ function sharesEdgeWithSameType(candVerts, candType) {
   return false;
 }
 
+// 두 도형이 변을 공유하는지 검사
+function shapesShareEdge(vertsA, vertsB) {
+  for (let i = 0; i < vertsA.length; i++) {
+    const a1 = vertsA[i], a2 = vertsA[(i + 1) % vertsA.length];
+    for (let j = 0; j < vertsB.length; j++) {
+      const b1 = vertsB[j], b2 = vertsB[(j + 1) % vertsB.length];
+      if (segmentsSharePositiveLength(a1, a2, b1, b2)) return true;
+    }
+  }
+  return false;
+}
+
 // ---------- 스냅 ----------
 function computeSnap(mwx, mwy) {
   const nextType = getNextType();
   if (!nextType) return { best: null, invalid: null };
-  if (shapes.length === 0) return { best: { x: mwx, y: mwy, rot: 0, type: nextType }, invalid: null };
+  
+  if (shapes.length === 0) {
+    return { best: { x: mwx, y: mwy, rot: 0, type: nextType }, invalid: null };
+  }
 
   let base;
   if (nextType === 'square') base = SQ_VERTS;
@@ -334,11 +376,9 @@ function computeSnap(mwx, mwy) {
       const a = verts[i], b = verts[(i + 1) % verts.length];
       const cp = closestPointOnSegment({ x: mwx, y: mwy }, a, b);
       
-      // [1단계] 거리 조건
       if (dist({ x: mwx, y: mwy }, cp) > SNAP_DIST) continue;
       checkedEdges++;
 
-      // 내부 변 제외
       let isInnerEdge = false;
       for (const other of shapes) {
         if (other === shape) continue;
@@ -352,7 +392,6 @@ function computeSnap(mwx, mwy) {
       }
       if (isInnerEdge) { lastRejectReason = 'inner_edge'; continue; }
 
-      // [2단계] 양쪽 방향 후보 생성
       let candidates = [];
       for (let j = 0; j < base.length; j++) {
         const c0 = base[j], d0 = base[(j + 1) % base.length];
@@ -361,7 +400,6 @@ function computeSnap(mwx, mwy) {
           const cvec = { x: d0.x - c0.x, y: d0.y - c0.y };
           const tvec = { x: targetB.x - targetA.x, y: targetB.y - targetA.y };
           
-          // ✨ [변경] 회전각을 계산한 후 1도 단위로 반올림
           let rot = Math.atan2(tvec.y, tvec.x) - Math.atan2(cvec.y, cvec.x);
           const rotDegrees = Math.round(rot * (180 / Math.PI));
           rot = rotDegrees * (Math.PI / 180);
@@ -369,16 +407,13 @@ function computeSnap(mwx, mwy) {
           const rc0 = rotPoint(c0, rot);
           const cx = targetA.x - rc0.x, cy = targetA.y - rc0.y;
           
-          // 임시 후보 도형 생성
           let candVerts = worldVerts({ type: nextType, x: cx, y: cy, rot });
 
-          // ✨ [핵심 변경] 기존 도형의 꼭짓점 좌표를 새 도형에 강제 대입 (오차 제거)
           candVerts[j] = { x: targetA.x, y: targetA.y };
           candVerts[(j + 1) % base.length] = { x: targetB.x, y: targetB.y };
 
           if (sharesEdgeWithSameType(candVerts, nextType)) continue;
           
-          // 소유자와의 겹침 면적 계산
           const ownerOverlapArea = getOverlapArea(candVerts, verts);
           if (ownerOverlapArea > 0.1) continue;
 
@@ -392,7 +427,6 @@ function computeSnap(mwx, mwy) {
       candidates.sort((x, y) => x.dMouse - y.dMouse);
       const chosen = candidates[0];
 
-      // [3단계] 최종 겹침 검사
       let hasOverlap = false;
       let overlapWith = null;
 
@@ -487,7 +521,6 @@ function drawShape(shape, opts = {}) {
   if (opts.stroke) { ctx.strokeStyle = opts.stroke; ctx.lineWidth = opts.lineWidth || 2; ctx.stroke(); }
 }
 
-// ✨ 도형 아이콘을 생성하는 헬퍼 함수 (중복 제거)
 function createShapeIcon(type) {
   const el = document.createElement('div');
   el.className = 'q-item';
@@ -516,8 +549,14 @@ function createShapeIcon(type) {
   return el;
 }
 
-// ✨ 큐 UI를 업데이트하는 함수
 function updateQueueUI() {
+  if (currentMode === 'practice') {
+    const queueUi = document.getElementById('queue-ui');
+    const slotUi = document.getElementById('slot-ui');
+    if (queueUi) queueUi.style.display = 'none';
+    if (slotUi) slotUi.style.display = 'none';
+    return;
+  }
   const queueArea = document.getElementById('queue-area');
   const slotArea = document.getElementById('slot-area');
   
@@ -526,14 +565,10 @@ function updateQueueUI() {
   queueArea.innerHTML = '';
   slotArea.innerHTML = '';
 
-  // 1. 현재 큐 영역 (3칸 고정)
   const currentBundle = shapeQueue[currentBundleIndex] || [];
-  
-  // ✨ 수정: 길이가 아니라 특수 표식(isSpecial)으로 판별
   const isTripleTri = currentBundle.isSpecial === true; 
   const originalBundleSize = currentBundle.length + currentShapeIndex; 
 
-  // 3칸 렌더링
   for (let i = 0; i < 3; i++) {
     const wrapper = document.createElement('div');
     wrapper.className = 'q-item-wrapper';
@@ -570,17 +605,14 @@ function updateQueueUI() {
     queueArea.appendChild(wrapper);
   }
 
-  // 2. 구분선
   const divider = document.createElement('div');
   divider.className = 'queue-divider';
   queueArea.appendChild(divider);
 
-  // 3. 다음 큐 첫 번째 도형 (미리보기)
   const nextBundleIndex = currentBundleIndex + 1;
   let nextItem = null;
   
   if (shapeQueue.length > nextBundleIndex && shapeQueue[nextBundleIndex].length > 0) {
-    // 다음 큐도 333 번들인지 확인 (특수 표식 기반)
     const isNextSpecial = shapeQueue[nextBundleIndex].isSpecial === true;
     nextItem = { type: shapeQueue[nextBundleIndex][0], isSlot: false, isSpecial: isNextSpecial };
   } else if (savedType) {
@@ -612,10 +644,7 @@ function updateQueueUI() {
     queueArea.appendChild(emptyNext);
   }
 
-  // 4. 슬롯 렌더링
   slotArea.innerHTML = '';
-  
-  // ✨ 수정: isTripleTri가 특수 표식 기반이므로, 남은 도형이 1개여도 잠금 유지됨
   const isLocked = isTripleTri || (currentBundleIndex === replacedBundleIndex && currentShapeIndex === replacedShapeIndex);
 
   const slotEl = document.createElement('div');
@@ -631,10 +660,29 @@ function updateQueueUI() {
   slotArea.appendChild(slotEl);
 }
 
+function updatePracticeCountUI() {
+  const counts = { tri: 0, square: 0, pent: 0, rhombus: 0 };
+  for (const s of shapes) {
+    if (counts[s.type] !== undefined) counts[s.type]++;
+  }
+
+  document.querySelectorAll('.count-icon').forEach(el => {
+    if (el.innerHTML === '') {
+      const type = el.getAttribute('data-type');
+      el.appendChild(createShapeIcon(type));
+    }
+  });
+
+  document.getElementById('count-tri').textContent = counts.tri;
+  document.getElementById('count-square').textContent = counts.square;
+  document.getElementById('count-pent').textContent = counts.pent;
+  document.getElementById('count-rhombus').textContent = counts.rhombus;
+}
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // ✨ 0. 타이머 및 파편 렌더링
+  // 0. 타이머 및 파편 렌더링
   if (HAS_TIMER && (gameState === 'playing' || gameState === 'result')) {
     let remainingTime = TIME_LIMIT;
     
@@ -643,7 +691,6 @@ function render() {
       if (remainingTime <= 0 && !isTimeOver) {
         isTimeOver = true;
         timerExplosionStart = performance.now();
-        // ✨ 폭발 시점에 파편 생성
         createTimerParticles(); 
       }
     } else if (gameState === 'result') {
@@ -653,21 +700,15 @@ function render() {
     const centerX = window.innerWidth / 2;
     const timerY = window.innerHeight / 2 - 200;
 
-    // ✨ 폭발 후 파편 그리기
+    // 폭발 후 파편 그리기
     if (isTimeOver && timerParticles.length > 0) {
-      const elapsed = performance.now() - timerExplosionStart;
-      
-      // 파편 업데이트 및 그리기
       for (let i = timerParticles.length - 1; i >= 0; i--) {
         const p = timerParticles[i];
-        
-        // 물리 연산 (속도, 중력, 투명도)
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.05; // 아주 약한 중력
-        p.alpha -= 0.015; // 서서히 투명해짐
+        p.vy += 0.05;
+        p.alpha -= 0.015;
         
-        // 수명이 다하면 제거
         if (p.alpha <= 0) {
           timerParticles.splice(i, 1);
           continue;
@@ -675,21 +716,19 @@ function render() {
 
         ctx.save();
         ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = '#ff5050'; // 붉은색 파편
+        ctx.fillStyle = '#ff5050';
         ctx.fillRect(p.x, p.y, p.size, p.size);
         ctx.restore();
       }
     } 
-    // ✨ 폭발 전 타이머 그리기
+    // 폭발 전 타이머 그리기
     else if (!isTimeOver) {
       ctx.save();
-      // ✨ 폰트가 로드되었으면 DSEG, 아니면 기본 sans-serif
       const fontFamily = isFontLoaded ? '"DSEG7 Classic", monospace' : 'sans-serif';
       ctx.font = `bold 80px ${fontFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      // 시간 문자열 포맷
       let timeStr;
       if (remainingTime > 30) {
         timeStr = Math.ceil(remainingTime).toString();
@@ -699,14 +738,12 @@ function render() {
         timeStr = remainingTime.toFixed(2);
       }
 
-      // 10초 이하 파동(심장박동) 효과
       if (remainingTime <= 10 && remainingTime > 0) {
         const now = performance.now();
-        const cycle = (now % 1000) / 1000; // 1초 주기
+        const cycle = (now % 1000) / 1000;
         
-        // 글자는 가만히 있고, 뒤에서 붉은 파동이 퍼져나감
-        const pulseRadius = 40 + (cycle * 60); // 40 -> 100으로 커짐
-        const pulseAlpha = 1 - cycle; // 1 -> 0으로 투명해짐
+        const pulseRadius = 40 + (cycle * 60);
+        const pulseAlpha = 1 - cycle;
         
         ctx.beginPath();
         ctx.arc(centerX, timerY, pulseRadius, 0, Math.PI * 2);
@@ -714,11 +751,9 @@ function render() {
         ctx.lineWidth = 4;
         ctx.stroke();
 
-        // 글자 자체는 고정 (붉은색)
         ctx.fillStyle = 'rgba(255, 80, 80, 0.2)';
         ctx.fillText(timeStr, centerX, timerY);
       } else {
-        // 평소 상태
         ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.fillText(timeStr, centerX, timerY);
       }
@@ -726,15 +761,22 @@ function render() {
     }
   }
   
+  // 1. 배치된 도형 렌더링
   for (const s of shapes) {
     const color = s.type === 'square' ? 'rgba(80,140,220,0.85)'
                 : s.type === 'tri' ? 'rgba(220,140,80,0.85)'
                 : s.type === 'pent' ? 'rgba(138,74,216,0.85)'
                 : 'rgba(80, 200, 180, 0.85)';
     drawShape(s, { fill: color, stroke: '#fff', lineWidth: 1.5 });
+
+    // Shift 키가 눌려있고, 이 도형이 hoveredShape라면 붉은색 덧씌우기
+    if (isShiftPressed && s === hoveredShape) {
+      drawShape(s, { fill: 'rgba(255, 80, 80, 0.4)', stroke: 'rgba(255, 80, 80, 0.9)', lineWidth: 2 });
+    }
   }
-  
-  if (gameState === 'playing') {
+
+  // 2. 미리보기 (Shift 키가 눌리지 않았을 때만 그리기)
+  if (gameState === 'playing' && !isShiftPressed) {
     const nextT = getNextType();
     if (nextT) {
       let drawX, drawY, drawRot;
@@ -749,7 +791,7 @@ function render() {
       if (nextT === 'square') color = 'rgba(80,140,220,0.35)';
       else if (nextT === 'tri') color = 'rgba(220,140,80,0.35)';
       else if (nextT === 'pent') color = 'rgba(138,74,216,0.35)';
-      else color = 'rgba(80, 200, 180, 0.35)'; // rhombus
+      else color = 'rgba(80, 200, 180, 0.35)';
                   
       ctx.globalAlpha = isSnapped ? 1.0 : 0.4; 
       drawShape(handShape, { fill: color, stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 });
@@ -757,10 +799,12 @@ function render() {
     }
   }
   
-  if (invalidPreview && gameState === 'playing') {
+  // 3. 겹침 미리보기 (Shift 키가 눌리지 않았을 때만 그리기)
+  if (invalidPreview && gameState === 'playing' && !isShiftPressed) {
     drawShape(invalidPreview, { fill: 'rgba(255, 80, 80, 0.1)', stroke: 'rgba(255, 80, 80, 0.6)', lineWidth: 1.5 });
   }
 
+  // 4. 볼록 껍질 렌더링
   const hull = computeHullPoints();
   if (hull) {
     ctx.beginPath();
@@ -778,6 +822,7 @@ function render() {
     ctx.setLineDash([]);
   }
 
+  // 5. 에러 툴팁 렌더링
   if (errorMsg && gameState === 'playing') {
     const elapsed = performance.now() - tooltipStartTime;
     let alpha = 1;
@@ -810,43 +855,42 @@ function render() {
     ctx.restore();
   }
 
+  // 6. HUD 텍스트 업데이트
   const rawPct = computeFillPercent();
   const displayPct = Math.floor(rawPct * 100) / 100; 
-  
-  // 80% 이상인지 미만인지에 따라 부등호 결정
   const compareSymbol = displayPct >= TARGET_PCT ? '≥' : '<';
   
-  hud.textContent =
-    `${shapes.length} / ${TOTAL_SHAPES}\n` +
-    `${displayPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%\n` +
-    `줌: ${view.scale.toFixed(2)}x`; // 줌 텍스트는 유지 (원하시면 삭제 가능)
+  if (currentMode === 'practice') {
+    hud.textContent =
+      `${shapes.length} / ∞\n` +
+      `${displayPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%\n` +
+      `줌: ${view.scale.toFixed(2)}x`;
+  } else {
+    hud.textContent =
+      `${shapes.length} / ${TOTAL_SHAPES}\n` +
+      `${displayPct.toFixed(2)}% ${compareSymbol} ${TARGET_PCT}%\n` +
+      `줌: ${view.scale.toFixed(2)}x`;
+  }
 }
 
-// ✨ 타이머가 터질 때 파편을 생성하는 함수 (render 함수 바깥에 추가)
+// 타이머 파편 생성
 function createTimerParticles() {
   timerParticles = [];
   const centerX = window.innerWidth / 2;
   const timerY = window.innerHeight / 2 - 200;
   
-  // 글자 영역(약 200x80)을 바탕으로 무작위 파편 생성
   const width = 200;
   const height = 80;
   
   for (let i = 0; i < 80; i++) {
-    // 글자 영역 안에서 무작위 위치
     const px = centerX - width / 2 + Math.random() * width;
     const py = timerY - height / 2 + Math.random() * height;
-    
-    // 무작위 속도 (사방으로 조금씩 퍼짐)
     const vx = (Math.random() - 0.5) * 4;
     const vy = (Math.random() - 0.5) * 4;
     
     timerParticles.push({
-      x: px,
-      y: py,
-      vx: vx,
-      vy: vy,
-      size: Math.random() * 3 + 2, // 2~5px 크기
+      x: px, y: py, vx: vx, vy: vy,
+      size: Math.random() * 3 + 2,
       alpha: 1
     });
   }
@@ -879,28 +923,33 @@ function resetGame() {
   replacedBundleIndex = -1;
   replacedShapeIndex = -1;
 
+  const btnSave = document.getElementById('btnSave');
+  if (btnSave) btnSave.disabled = false;
+
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
   const w = screenToWorld(cx, cy);
-  
-  // ✨ 첫 번째 큐의 첫 번째 도형을 꺼내서 배치하고, 큐에서 제거
-  const currentBundle = shapeQueue[currentBundleIndex];
-  const firstType = currentBundle.shift(); // 배열에서 제거
-  shapes.push({ type: firstType, x: w.x, y: w.y, rot: 0 });
-  
-  // 만약 첫 번째 큐가 비었다면 다음 큐로 이동
-  if (currentBundle.length === 0) {
-    currentBundleIndex++;
-    currentShapeIndex = 0;
+
+  if (currentMode === 'practice') {
+    practiceCurrentType = 'tri';
+    updatePracticeCountUI();
   } else {
-    currentShapeIndex = 0; // 남은 도형의 첫 번째가 현재 들고 있는 도형
+    const currentBundle = shapeQueue[currentBundleIndex];
+    if (currentBundle && currentBundle.length > 0) {
+      const firstType = currentBundle.shift();
+      shapes.push({ type: firstType, x: w.x, y: w.y, rot: 0 });
+      
+      if (currentBundle.length === 0) {
+        currentBundleIndex++;
+        currentShapeIndex = 0;
+      } else {
+        currentShapeIndex = 0;
+      }
+    }
   }
   
   updateQueueUI();
-  document.getElementById('rankingPanel').classList.add('hidden'); // ✨ 숨기기
-
-  const btnSave = document.getElementById('btnSave');
-  if (btnSave) btnSave.disabled = false;
+  document.getElementById('rankingPanel').classList.add('hidden');
 }
 
 function startGame() {
@@ -910,7 +959,6 @@ function startGame() {
 }
 
 function goHome() {
-  // ✨ index.html로 이동
   window.location.href = 'index.html';
 }
 
@@ -921,7 +969,6 @@ function showRankingOverlay(canInput) {
   const desc = document.getElementById('initialsDesc');
   const rankingList = document.getElementById('rankingList');
 
-  // 랭킹 목록 렌더링
   const rankings = getRankings();
   rankingList.innerHTML = rankings.map((r, i) => 
     `<div style="display:flex; justify-content:space-between; padding: 4px 0; border-bottom: 1px solid #444;">
@@ -947,6 +994,8 @@ function showRankingOverlay(canInput) {
 }
 
 function checkResult() {
+  if (currentMode === 'practice') return;
+
   const rawPct = computeFillPercent();
   const truncatedPct = Math.floor(rawPct * 100) / 100; 
   const success = truncatedPct >= TARGET_PCT;
@@ -961,16 +1010,13 @@ function checkResult() {
   hideAllOverlays();
   resultBar.classList.add('show');
   
-  // ✨ 랭킹 로직 (HAS_RANKING이 true일 때만 실행)
   if (HAS_RANKING) {
     const elapsed = HAS_TIMER ? (performance.now() - startTime) / 1000 : 0;
     finalRemainingTime = HAS_TIMER ? Math.max(0, TIME_LIMIT - elapsed) : 0;
     if (isTimeOver) finalRemainingTime = 0;
 
-    // 우측 랭킹 패널 표시
     updateRankingPanel();
     
-    // 랭킹 등록 자격 확인 및 입력창 띄우기
     const currentRankings = getRankings();
     const isRankable = success && !isTimeOver && (
       currentRankings.length < MAX_RANKING || 
@@ -983,11 +1029,9 @@ function checkResult() {
       showInitialsInput(); 
     }
   } else {
-    // 쉬움 모드에서는 랭킹 패널 숨김
     document.getElementById('rankingPanel').classList.add('hidden');
   }
   
-  // 저장 버튼 비활성화
   const btnSave = document.getElementById('btnSave');
   if (btnSave) btnSave.disabled = true;
 }
@@ -996,7 +1040,7 @@ function checkResult() {
 function serializeState() {
   return {
     version: 4,
-    mode: currentMode, // ✨ 현재 모드 저장
+    mode: currentMode,
     shapes: shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot })),
     queue: shapeQueue.map(bundle => ({
       shapes: [...bundle],
@@ -1007,34 +1051,36 @@ function serializeState() {
     replacedBundleIndex,
     replacedShapeIndex,
     savedType: savedType,
+    practiceCurrentType: practiceCurrentType,
     isTimeOver: isTimeOver,
     view: { x: view.x, y: view.y, scale: view.scale },
     savedAt: new Date().toISOString(),
   };
 }
-// loadFromSlot에서 version === 3 조건 확인 및 변수 복원
+
 function saveToSlot(i) {
   if (!confirm('저장하시겠습니까?\n(주의: 저장/불러오기를 하면 랭킹 등록이 불가능해집니다.)')) {
     return false;
   }
   try {
-    // ✨ 저장 시 시간 초과 처리 강제
-    isTimeOver = true; 
+    if (HAS_TIMER) isTimeOver = true;
     localStorage.setItem(SAVE_PREFIX + i, JSON.stringify(serializeState()));
     return true;
   } catch (e) { return false; }
 }
+
 function loadFromSlot(i) {
   try {
     const raw = localStorage.getItem(SAVE_PREFIX + i);
     if (!raw) return false;
     const data = JSON.parse(raw);
     if (!data || data.version !== 4 || !Array.isArray(data.shapes)) return false;
+    
     if (data.mode !== currentMode) {
       alert('다른 난이도의 저장 데이터는 불러올 수 없습니다.');
       return false;
     }
-    
+
     shapes = data.shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot }));
     shapeQueue = data.queue.map(item => {
       const bundle = [...item.shapes];
@@ -1051,12 +1097,16 @@ function loadFromSlot(i) {
     preview = null;
     savedType = data.savedType || null;
     
-    // ✨ 불러오기 시 시간 초과 상태 강제
-    isTimeOver = true; 
+    if (currentMode === 'practice') {
+      practiceCurrentType = data.practiceCurrentType || 'tri';
+    } else {
+      isTimeOver = true;
+    }
     
     gameState = 'playing';
     resultBar.classList.remove('show');
     updateQueueUI();
+    if (currentMode === 'practice') updatePracticeCountUI();
     hideAllOverlays();
     return true;
   } catch (e) { 
@@ -1064,6 +1114,7 @@ function loadFromSlot(i) {
     return false; 
   }
 }
+
 function slotInfo(i) {
   try {
     const raw = localStorage.getItem(SAVE_PREFIX + i);
@@ -1073,14 +1124,16 @@ function slotInfo(i) {
     return { 
       count: d.shapes.length, 
       savedAt: d.savedAt || '',
-      mode: d.mode || 'unknown' // ✨ 모드 정보 추가
+      mode: d.mode || 'unknown'
     };
   } catch (e) { return null; }
 }
+
 function deleteSlot(i) {
   try { localStorage.removeItem(SAVE_PREFIX + i); return true; } 
   catch (e) { return false; }
 }
+
 function renderSlots(container, mode) {
   container.innerHTML = '';
   for (let i = 0; i < SAVE_SLOTS; i++) {
@@ -1096,10 +1149,10 @@ function renderSlots(container, mode) {
       });
     }
 
-    // ✨ 난이도 텍스트 매핑
     let modeStr = '';
     if (info && info.mode === 'easy') modeStr = '[쉬움] ';
     else if (info && info.mode === 'hard') modeStr = '[어려움] ';
+    else if (info && info.mode === 'practice') modeStr = '[전략실] ';
 
     const label = document.createElement('div');
     label.innerHTML = `<b>슬롯 ${i + 1}</b> <span class="info">${info ? `${modeStr}${info.count}개 · ${timeStr}` : '비어 있음'}</span>`;
@@ -1108,9 +1161,8 @@ function renderSlots(container, mode) {
     btnGroup.style.display = 'flex';
     btnGroup.style.gap = '6px';
 
-        const btn = document.createElement('button');
+    const btn = document.createElement('button');
     if (mode === 'save') {
-      // 1. 저장 버튼
       btn.textContent = '저장';
       btn.onclick = () => {
         if (info) { 
@@ -1121,21 +1173,19 @@ function renderSlots(container, mode) {
       };
       btnGroup.appendChild(btn);
 
-      // ✨ 2. 저장 화면에서도 삭제 버튼 추가
       const btnDel = document.createElement('button');
       btnDel.textContent = '삭제';
       btnDel.className = 'danger';
       btnDel.disabled = !info;
       btnDel.onclick = () => {
         if (confirm(`슬롯 ${i + 1}의 데이터를 정말 삭제하시겠습니까?`)) {
-          if (deleteSlot(i)) renderSlots(container, 'save'); // ✨ 저장 화면 갱신
+          if (deleteSlot(i)) renderSlots(container, 'save');
           else alert('삭제 실패');
         }
       };
       btnGroup.appendChild(btnDel);
 
     } else {
-      // 불러오기 모드
       btn.textContent = '불러오기';
       btn.disabled = !info;
       btn.onclick = () => { if (!loadFromSlot(i)) alert('불러오기 실패'); };
@@ -1160,6 +1210,7 @@ function renderSlots(container, mode) {
   }
 }
 
+// ---------- 랭킹 ----------
 function getRankings() {
   try {
     const raw = localStorage.getItem(RANKING_KEY);
@@ -1172,7 +1223,7 @@ function saveRanking(pct, time, initials) {
     let rankings = getRankings();
     const newRecord = {
       id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-      initials: initials, // ✨ 이니셜 저장
+      initials: initials,
       pct: pct,
       time: time,
       date: new Date().toISOString()
@@ -1190,7 +1241,6 @@ function saveRanking(pct, time, initials) {
   }
 }
 
-// ✨ 우측 랭킹 패널 갱신
 function updateRankingPanel() {
   const panel = document.getElementById('rankingPanel');
   const list = document.getElementById('rankingList');
@@ -1206,12 +1256,68 @@ function updateRankingPanel() {
   panel.classList.remove('hidden');
 }
 
-// ✨ 이니셜 입력창 띄우기 (중앙)
 function showInitialsInput() {
   hideAllOverlays();
   document.getElementById('initialsMenu').classList.remove('hidden');
   document.getElementById('initialsInput').value = '';
   document.getElementById('initialsInput').focus();
+}
+
+// ---------- 도형 삭제 관련 ----------
+function canRemoveShape(targetShape) {
+  if (shapes.length <= 1) return true;
+
+  const adj = new Map();
+  for (const s of shapes) adj.set(s, []);
+
+  for (let i = 0; i < shapes.length; i++) {
+    for (let j = i + 1; j < shapes.length; j++) {
+      if (shapesShareEdge(worldVerts(shapes[i]), worldVerts(shapes[j]))) {
+        adj.get(shapes[i]).push(shapes[j]);
+        adj.get(shapes[j]).push(shapes[i]);
+      }
+    }
+  }
+
+  // 제거 전 연결 요소 개수 (targetShape 포함)
+  const visitedBefore = new Set();
+  let componentsBefore = 0;
+  for (const s of shapes) {
+    if (visitedBefore.has(s)) continue;
+    componentsBefore++;
+    const queue = [s];
+    visitedBefore.add(s);
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      for (const neighbor of adj.get(curr)) {
+        if (!visitedBefore.has(neighbor)) {
+          visitedBefore.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+  }
+
+  // 제거 후 연결 요소 개수 (targetShape 제외)
+  const visitedAfter = new Set();
+  let componentsAfter = 0;
+  for (const s of shapes) {
+    if (s === targetShape || visitedAfter.has(s)) continue;
+    componentsAfter++;
+    const queue = [s];
+    visitedAfter.add(s);
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      for (const neighbor of adj.get(curr)) {
+        if (neighbor !== targetShape && !visitedAfter.has(neighbor)) {
+          visitedAfter.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+  }
+
+  return componentsAfter === componentsBefore;
 }
 
 // ---------- 이벤트 ----------
@@ -1220,9 +1326,7 @@ document.getElementById('btnResume').onclick = () => { gameState = 'playing'; hi
 document.getElementById('btnShowRules').onclick = () => { hideOverlay(pauseMenu); showOverlay(rulesAgain); };
 document.getElementById('btnRulesBack').onclick = () => { hideOverlay(rulesAgain); showOverlay(pauseMenu); };
 document.getElementById('btnSave').onclick = () => {
-  if (gameState === 'result' || stateBeforePause === 'result') {
-    return;
-  }
+  if (gameState === 'result' || stateBeforePause === 'result') return;
   renderSlots(saveSlotsEl, 'save');
   hideOverlay(pauseMenu);
   showOverlay(saveMenu);
@@ -1236,10 +1340,8 @@ document.getElementById('btnResultHome').onclick = goHome;
 
 document.getElementById('btnSubmitRanking').onclick = () => {
   const input = document.getElementById('initialsInput');
-  // ✨ 영문 대문자와 숫자만 허용
   let initials = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   
-  // ✨ 3글자가 아니면 저장하지 않고 경고
   if (initials.length !== 3) {
     alert('이름은 영문 및 숫자 3글자로 정확히 입력해야 합니다.');
     input.focus();
@@ -1247,27 +1349,21 @@ document.getElementById('btnSubmitRanking').onclick = () => {
   }
   
   if (pendingRankData) {
-    // ✨ 3글자가 확인된 시점에만 랭킹 저장
     saveRanking(pendingRankData.pct, pendingRankData.time, initials);
     pendingRankData = null;
   }
   
-  hideOverlay(document.getElementById('initialsMenu')); // 입력창 닫기
-  updateRankingPanel(); // 우측 랭킹 패널 갱신
+  hideOverlay(document.getElementById('initialsMenu'));
+  updateRankingPanel();
 };
 
 document.getElementById('initialsInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    document.getElementById('btnSubmitRanking').click();
-  }
+  if (e.key === 'Enter') document.getElementById('btnSubmitRanking').click();
 });
 
-// ✨ 퀵 재시작 버튼 이벤트
 document.getElementById('btnQuickRestart').onclick = () => {
   if (gameState === 'playing' || gameState === 'result') {
-    if (confirm('게임을 다시 시작하시겠습니까?\n현재 진행 상황은 저장되지 않습니다.')) {
-      startGame(); // 게임 재시작 함수 호출
-    }
+    if (confirm('게임을 다시 시작하시겠습니까?\n현재 진행 상황은 저장되지 않습니다.')) startGame();
   }
 };
 
@@ -1288,6 +1384,21 @@ canvas.addEventListener('mousemove', (e) => {
     const w = screenToWorld(mouse.sx, mouse.sy);
     mouse.wx = w.x; mouse.wy = w.y;
     
+    if (currentMode === 'practice' && isShiftPressed) {
+      hoveredShape = null;
+      for (let i = shapes.length - 1; i >= 0; i--) {
+        if (isPointInPolygon({ x: mouse.wx, y: mouse.wy }, worldVerts(shapes[i]))) {
+          hoveredShape = shapes[i];
+          break;
+        }
+      }
+      preview = null;
+      invalidPreview = null;
+      return; 
+    } else {
+      hoveredShape = null;
+    }
+
     const res = computeSnap(w.x, w.y);
     preview = res.best;
     invalidPreview = res.invalid;
@@ -1321,34 +1432,76 @@ window.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('click', (e) => {
   if (gameState !== 'playing' || e.button !== 0) return;
+
+  // ✨ Shift 키가 눌린 상태: 무조건 삭제 로직만 수행하고 종료
+  if (currentMode === 'practice' && isShiftPressed) {
+    let target = hoveredShape;
+    if (!target) {
+      for (let i = shapes.length - 1; i >= 0; i--) {
+        if (isPointInPolygon({ x: mouse.wx, y: mouse.wy }, worldVerts(shapes[i]))) {
+          target = shapes[i];
+          break;
+        }
+      }
+    }
+    
+    if (target) {
+      if (canRemoveShape(target)) {
+        const index = shapes.indexOf(target);
+        if (index > -1) {
+          shapes.splice(index, 1);
+          updatePracticeCountUI();
+          hoveredShape = null;
+          errorMsg = '도형을 삭제했습니다.';
+          tooltipX = mouse.sx;
+          tooltipY = mouse.sy - 20;
+          tooltipStartTime = performance.now();
+          clearTimeout(errorMsgTimer);
+          errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+        }
+      } else {
+        errorMsg = '이 도형을 삭제하면 도형이 분리됩니다!';
+        tooltipX = mouse.sx;
+        tooltipY = mouse.sy - 20;
+        tooltipStartTime = performance.now();
+        clearTimeout(errorMsgTimer);
+        errorMsgTimer = setTimeout(() => { errorMsg = ''; }, 1200);
+      }
+    } else {
+      // ✨ 빈 곳을 클릭했을 때는 아무런 동작도 하지 않고 종료
+      errorMsg = ''; // 기존 오류 메시지 초기화
+    }
+    
+    return; // ✨ 배치 로직으로 넘어가지 않도록 여기서 무조건 종료
+  }
   
+  // --- 이하 일반 배치 로직 ---
   const nextT = getNextType();
   if (!nextT) return;
 
   if (preview) {
     shapes.push({ type: nextT, x: preview.x, y: preview.y, rot: preview.rot });
     
-    // 큐에서 제거 및 인덱스 이동
-    if (shapeQueue.length > currentBundleIndex) {
-      const currentBundle = shapeQueue[currentBundleIndex];
-      if (currentShapeIndex < currentBundle.length) {
-        currentBundle.splice(currentShapeIndex, 1);
+    if (currentMode === 'practice') {
+      updatePracticeCountUI();
+    } else {
+      if (shapeQueue.length > currentBundleIndex) {
+        const currentBundle = shapeQueue[currentBundleIndex];
+        if (currentShapeIndex < currentBundle.length) {
+          currentBundle.splice(currentShapeIndex, 1);
+        }
+        if (currentBundle.length === 0 || currentShapeIndex >= currentBundle.length) {
+          currentBundleIndex++;
+          currentShapeIndex = 0;
+        }
+      } else if (savedType) {
+        savedType = null;
       }
-      
-      // 현재 묶음을 다 썼다면 다음 묶음으로 이동
-      if (currentBundle.length === 0 || currentShapeIndex >= currentBundle.length) {
-        currentBundleIndex++;
-        currentShapeIndex = 0;
-      }
-    } else if (savedType) {
-      savedType = null;
+      updateQueueUI();
     }
 
-    // ✨ [예외 1 해제] 도형이 배치되었으므로 교체 락 해제
     replacedBundleIndex = -1;
     replacedShapeIndex = -1;
-
-    updateQueueUI();
     errorMsg = '';
     
     if (shapes.length >= TOTAL_SHAPES) {
@@ -1397,17 +1550,26 @@ canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefaul
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (gameState !== 'playing') return;
+
+  if (currentMode === 'practice') {
+    const shapesOrder = ['tri', 'square', 'pent', 'rhombus'];
+    const currentIndex = shapesOrder.indexOf(practiceCurrentType);
+    practiceCurrentType = shapesOrder[(currentIndex + 1) % shapesOrder.length];
+    
+    const w = screenToWorld(mouse.sx, mouse.sy);
+    const res = computeSnap(w.x, w.y);
+    preview = res.best;
+    invalidPreview = res.invalid;
+    return;
+  }
   
-  // 1. 큐가 비었거나 현재 묶음이 없으면 중단
   if (shapeQueue.length === 0 || currentBundleIndex >= shapeQueue.length) return;
   
-  // ✨ [수정] currentBundle 변수를 가장 먼저 선언하여 참조 에러 방지
   const currentBundle = shapeQueue[currentBundleIndex];
-  if (currentShapeIndex >= currentBundle.length) return; // 현재 묶음 다 씀
+  if (currentShapeIndex >= currentBundle.length) return;
 
   const currentNext = currentBundle[currentShapeIndex];
 
-  // ✨ 2. 마지막 도형 체크 (현재 큐에 남은 도형이 1개이고, 다음 큐가 없을 때)
   const isLastShapeInQueue = (currentBundle.length === 1);
   const isNoNextBundle = (shapeQueue.length === currentBundleIndex + 1);
   
@@ -1421,7 +1583,6 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 3. 슬롯에 있는 도형과 현재 도형이 같으면 경고 (교체 무의미)
   if (savedType === currentNext) {
     errorMsg = '이미 같은 도형을 들고 있습니다.';
     tooltipX = mouse.sx;
@@ -1432,7 +1593,6 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 4. 삼삼삼 번들인 경우 교체 불가
   if (currentBundle.isSpecial === true) {
     errorMsg = '삼각형 3개 번들은 교체할 수 없습니다!';
     tooltipX = mouse.sx;
@@ -1443,7 +1603,6 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 5. 이미 이 조각을 교체했다면 재교체 불가
   if (currentBundleIndex === replacedBundleIndex && currentShapeIndex === replacedShapeIndex) {
     errorMsg = '이미 교체한 조각입니다. 배치 후 다시 시도하세요.';
     tooltipX = mouse.sx;
@@ -1454,29 +1613,22 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
 
-  // 6. 교체 로직 수행
   if (!savedType) {
-    // 슬롯이 비어있으면 현재 도형을 슬롯으로 이동
     savedType = currentNext;
     currentBundle.splice(currentShapeIndex, 1); 
-    
-    // splice로 인해 배열이 당겨지므로, 현재 인덱스가 배열 길이를 넘어가면 다음 묶음으로 넘김
     if (currentShapeIndex >= currentBundle.length) {
       currentBundleIndex++;
       currentShapeIndex = 0;
     }
   } else {
-    // 슬롯에 도형이 있으면 서로 교체(Swap)
     const temp = savedType;
     savedType = currentNext;
     currentBundle[currentShapeIndex] = temp;
   }
 
-  // 7. 교체 락 기록 (재교체 방지)
   replacedBundleIndex = currentBundleIndex;
   replacedShapeIndex = currentShapeIndex;
 
-  // 8. UI 및 미리보기 갱신
   updateQueueUI();
   preview = null;
   invalidPreview = null;
@@ -1488,6 +1640,10 @@ canvas.addEventListener('contextmenu', (e) => {
 });
 
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') {
+    isShiftPressed = true;
+    document.body.classList.add('shift-pressed');
+  }
   if (e.key === 'Escape') {
     if (gameState === 'playing' || gameState === 'result') {
       stateBeforePause = gameState; 
@@ -1495,17 +1651,14 @@ window.addEventListener('keydown', (e) => {
       if (HAS_TIMER) pausedTime = performance.now(); 
       showOverlay(pauseMenu);
       
-      // ✨ 수정: 결과 화면일 때만 저장 버튼 비활성화
       const btnSave = document.getElementById('btnSave');
       if (btnSave) btnSave.disabled = (stateBeforePause === 'result'); 
       
     } else if (gameState === 'paused') {
       if (!saveMenu.classList.contains('hidden') || !loadMenu.classList.contains('hidden') || !rulesAgain.classList.contains('hidden')) {
-        // 하위 메뉴가 열려있으면 그것들만 닫음
         hideOverlay(saveMenu); hideOverlay(loadMenu); hideOverlay(rulesAgain);
         showOverlay(pauseMenu);
       } else {
-        // 일시정지 해제 (재개)
         gameState = stateBeforePause; 
         if (HAS_TIMER) {
           startTime += (performance.now() - pausedTime); 
@@ -1516,6 +1669,13 @@ window.addEventListener('keydown', (e) => {
         if (btnSave) btnSave.disabled = (gameState === 'result');
       }
     }
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'Shift') {
+    isShiftPressed = false;
+    document.body.classList.remove('shift-pressed');
   }
 });
 
