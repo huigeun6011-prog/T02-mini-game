@@ -91,6 +91,8 @@ const HAS_RANKING = config.hasRanking;
 const TIME_LIMIT = config.timeLimit;
 const AVAILABLE_SHAPES = config.shapes;
 
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 // ---------- 상태 ----------
 let gameState = 'ready';
 let shapes = [];
@@ -746,7 +748,7 @@ function render() {
       if (remainingTime <= 0 && !isTimeOver) {
         isTimeOver = true;
         timerExplosionStart = performance.now();
-        createTimerParticles(); 
+        if (!prefersReducedMotion) createTimerParticles();
       }
     } else if (gameState === 'result') {
       remainingTime = finalRemainingTime; 
@@ -793,7 +795,7 @@ function render() {
         timeStr = remainingTime.toFixed(2);
       }
 
-      if (remainingTime <= 10 && remainingTime > 0) {
+      if (remainingTime <= 10 && remainingTime > 0 && !prefersReducedMotion) {
         const now = performance.now();
         const cycle = (now % 1000) / 1000;
         
