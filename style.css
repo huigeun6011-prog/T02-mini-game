@@ -195,6 +195,14 @@ canvas {
   padding: 12px 0;
   font-size: 15px;
 }
+
+/* 기존 .overlay 스타일은 그대로 두고, 특정 오버레이들에 배경색 추가 */
+#saveMenu, #loadMenu, #rulesAgain {
+  background: #1e1e24; /* ✨ 일시정지와 동일한 불투명 배경 */
+  z-index: 30; /* 일시정지 메뉴와 동일한 z-index */
+  pointer-events: auto;
+}
+
 .overlay.hidden { display: none; }
 .panel {
   background: #2a2a34; padding: 28px 32px; border-radius: 12px;

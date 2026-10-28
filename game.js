@@ -879,9 +879,6 @@ function resetGame() {
   replacedBundleIndex = -1;
   replacedShapeIndex = -1;
 
-  const btnSave = document.getElementById('btnSave');
-  if (btnSave) btnSave.disabled = false;
-
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
   const w = screenToWorld(cx, cy);
@@ -901,6 +898,9 @@ function resetGame() {
   
   updateQueueUI();
   document.getElementById('rankingPanel').classList.add('hidden'); // ✨ 숨기기
+
+  const btnSave = document.getElementById('btnSave');
+  if (btnSave) btnSave.disabled = false;
 }
 
 function startGame() {
@@ -996,6 +996,7 @@ function checkResult() {
 function serializeState() {
   return {
     version: 4,
+    mode: currentMode, // ✨ 현재 모드 저장
     shapes: shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot })),
     queue: shapeQueue.map(bundle => ({
       shapes: [...bundle],
@@ -1006,7 +1007,7 @@ function serializeState() {
     replacedBundleIndex,
     replacedShapeIndex,
     savedType: savedType,
-    isTimeOver: isTimeOver, // ✨ 저장
+    isTimeOver: isTimeOver,
     view: { x: view.x, y: view.y, scale: view.scale },
     savedAt: new Date().toISOString(),
   };
@@ -1029,6 +1030,10 @@ function loadFromSlot(i) {
     if (!raw) return false;
     const data = JSON.parse(raw);
     if (!data || data.version !== 4 || !Array.isArray(data.shapes)) return false;
+    if (data.mode !== currentMode) {
+      alert('다른 난이도의 저장 데이터는 불러올 수 없습니다.');
+      return false;
+    }
     
     shapes = data.shapes.map(s => ({ type: s.type, x: s.x, y: s.y, rot: s.rot }));
     shapeQueue = data.queue.map(item => {
@@ -1065,7 +1070,11 @@ function slotInfo(i) {
     if (!raw) return null;
     const d = JSON.parse(raw);
     if (!d || !Array.isArray(d.shapes)) return null;
-    return { count: d.shapes.length, savedAt: d.savedAt || '' };
+    return { 
+      count: d.shapes.length, 
+      savedAt: d.savedAt || '',
+      mode: d.mode || 'unknown' // ✨ 모드 정보 추가
+    };
   } catch (e) { return null; }
 }
 function deleteSlot(i) {
@@ -1087,8 +1096,13 @@ function renderSlots(container, mode) {
       });
     }
 
+    // ✨ 난이도 텍스트 매핑
+    let modeStr = '';
+    if (info && info.mode === 'easy') modeStr = '[쉬움] ';
+    else if (info && info.mode === 'hard') modeStr = '[어려움] ';
+
     const label = document.createElement('div');
-    label.innerHTML = `<b>슬롯 ${i + 1}</b> <span class="info">${info ? `${info.count}개 · ${timeStr}` : '비어 있음'}</span>`;
+    label.innerHTML = `<b>슬롯 ${i + 1}</b> <span class="info">${info ? `${modeStr}${info.count}개 · ${timeStr}` : '비어 있음'}</span>`;
     
     const btnGroup = document.createElement('div');
     btnGroup.style.display = 'flex';
@@ -1476,25 +1490,31 @@ canvas.addEventListener('contextmenu', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (gameState === 'playing' || gameState === 'result') {
-      stateBeforePause = gameState;
+      stateBeforePause = gameState; 
       gameState = 'paused';
-      if (HAS_TIMER) pausedTime = performance.now(); // ✨ 타이머가 있을 때만 기록
+      if (HAS_TIMER) pausedTime = performance.now(); 
       showOverlay(pauseMenu);
       
+      // ✨ 수정: 결과 화면일 때만 저장 버튼 비활성화
       const btnSave = document.getElementById('btnSave');
-      if (btnSave) btnSave.disabled = true; 
+      if (btnSave) btnSave.disabled = (stateBeforePause === 'result'); 
       
     } else if (gameState === 'paused') {
-      // ... (기존 하위 메뉴 닫기 로직) ...
-    } else {
-      gameState = stateBeforePause;
-      if (HAS_TIMER) {
-        startTime += (performance.now() - pausedTime); // ✨ 타이머 보정
+      if (!saveMenu.classList.contains('hidden') || !loadMenu.classList.contains('hidden') || !rulesAgain.classList.contains('hidden')) {
+        // 하위 메뉴가 열려있으면 그것들만 닫음
+        hideOverlay(saveMenu); hideOverlay(loadMenu); hideOverlay(rulesAgain);
+        showOverlay(pauseMenu);
+      } else {
+        // 일시정지 해제 (재개)
+        gameState = stateBeforePause; 
+        if (HAS_TIMER) {
+          startTime += (performance.now() - pausedTime); 
+        }
+        hideAllOverlays();
+        
+        const btnSave = document.getElementById('btnSave');
+        if (btnSave) btnSave.disabled = (gameState === 'result');
       }
-      hideAllOverlays();
-      
-      const btnSave = document.getElementById('btnSave');
-      if (btnSave) btnSave.disabled = (gameState === 'result');
     }
   }
 });
