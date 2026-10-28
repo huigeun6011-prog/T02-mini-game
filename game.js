@@ -1184,16 +1184,39 @@ document.getElementById('btnResultHome').onclick = goHome;
 
 document.getElementById('btnSubmitRanking').onclick = () => {
   const input = document.getElementById('initialsInput');
-  let initials = input.value.trim().toUpperCase();
-  initials = initials.replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'A');
+  // ✨ 영문 대문자와 숫자만 허용
+  let initials = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  
+  // ✨ 3글자가 아니면 저장하지 않고 경고
+  if (initials.length !== 3) {
+    alert('이름은 영문 및 숫자 3글자로 정확히 입력해야 합니다.');
+    input.focus();
+    return; 
+  }
   
   if (pendingRankData) {
+    // ✨ 3글자가 확인된 시점에만 랭킹 저장
     saveRanking(pendingRankData.pct, pendingRankData.time, initials);
     pendingRankData = null;
   }
   
   hideOverlay(document.getElementById('initialsMenu')); // 입력창 닫기
-  updateRankingPanel(); // ✨ 우측 랭킹 패널 갱신
+  updateRankingPanel(); // 우측 랭킹 패널 갱신
+};
+
+document.getElementById('initialsInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    document.getElementById('btnSubmitRanking').click();
+  }
+});
+
+// ✨ 퀵 재시작 버튼 이벤트
+document.getElementById('btnQuickRestart').onclick = () => {
+  if (gameState === 'playing' || gameState === 'result') {
+    if (confirm('게임을 다시 시작하시겠습니까?\n현재 진행 상황은 저장되지 않습니다.')) {
+      startGame(); // 게임 재시작 함수 호출
+    }
+  }
 };
 
 canvas.addEventListener('mousemove', (e) => {
