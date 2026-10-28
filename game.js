@@ -472,7 +472,7 @@ function computeSnap(mwx, mwy) {
           if (sharesEdgeWithSameType(candVerts, nextType)) continue;
           
           const ownerOverlapArea = getOverlapArea(candVerts, verts);
-          if (ownerOverlapArea > 0.1) continue;
+          if (ownerOverlapArea > 1e-6) continue;
 
           const dMouse = Math.hypot(cx - mwx, cy - mwy);
           candidates.push({ x: cx, y: cy, rot, dMouse, candVerts });
@@ -490,7 +490,7 @@ function computeSnap(mwx, mwy) {
       for (const other of shapes) {
         const otherVerts = worldVerts(other);
         const area = getOverlapArea(chosen.candVerts, otherVerts);
-        if (area > 0.1) { 
+        if (area > 1e-6) { 
           hasOverlap = true;
           overlapWith = other;
           break;
